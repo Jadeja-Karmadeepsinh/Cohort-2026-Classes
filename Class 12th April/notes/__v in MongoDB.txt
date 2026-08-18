@@ -1,3 +1,5 @@
+//! DONE
+
 Absolutely. `__v` looks mysterious at first, but once you understand **why Mongoose added it**, it becomes very simple.
 
 # What is `__v` in MongoDB/Mongoose?
