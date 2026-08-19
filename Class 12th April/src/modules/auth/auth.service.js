@@ -93,8 +93,6 @@ export class AuthService {
             email: data.email
         });
 
-        
-
         //if not then send user error not found
         //if exsiste then fetch user from db
         //compare user password
