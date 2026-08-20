@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { ApiError } from "../utils/api-error";
+import { ApiError } from "../utils/api-error.js";
 import { ZodError } from "zod";
 
 const isObject = (val) => {

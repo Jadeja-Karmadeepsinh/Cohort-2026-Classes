@@ -1,34 +1,19 @@
 import { Router } from "express";
-import { rateLimit } from "express-rate-limit";
+import { authLimiter } from "../../common/middleware/ratelimit.middleware.js";
 import { AuthController } from "./auth.controller.js";
 import { requireAuth } from "../../common/middleware/auth.middleware.js";
 
 const router = Router();
 
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    message: {
-        success: false,
-        error: "Too many attempts from this IP, please try again after 15 minutes"
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    validate: {
-        xForwardedForHeader: false,
-        trustProxy: false
-    }
-})
-
 //! Rate limited routes
-router.post('/register', authLimiter, AuthController.register);
-router.post('/login', authLimiter, AuthController.login);
+router.post('/register', authLimiter, AuthController.register); //* Working
+router.post('/login', authLimiter, AuthController.login); //* Working
 
 //! Non rate limit routes
-router.post('/refresh', AuthController.refresh);
-router.post('logout', AuthController.logout);
+router.post('/refresh', AuthController.refresh); //* Working
+router.post('/logout', AuthController.logout); //* Working
 
 //! Authenticated route
-router.get('/me', requireAuth, AuthController.getMe);
+router.get('/me', requireAuth, AuthController.getMe); //* Working
 
 export const authRoutes = router;

@@ -8,11 +8,13 @@ const teamSchema = new Schema({
         minlength: 10,
         maxlength: 50,
         trim: true,
+        unique: true,
         required: [true, "Team name is required"]
     },
     shortHand: {
         type: String,
         trim: true,
+        unique: true,
         required: [true, "Team shorthand is required"]
     },
     titles: {
@@ -21,11 +23,13 @@ const teamSchema = new Schema({
     },
     homeVenue: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Venue" //! Check this again
+        ref: "Venue", //! Check this again
+        default: null
     },
     captain: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Player"
+        ref: "Player",
+        default: null
     } //! Here in future we can add coach field also if we want to 
 }, { timestamps: true });
 

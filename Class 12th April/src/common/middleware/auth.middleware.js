@@ -1,6 +1,6 @@
 import { verifyAccessToken } from '../utils/jwt-utils.js';
 import { ApiError } from '../utils/api-error.js';
-import { User } from '../../modules/auth/auth.model.js';
+import User from '../../modules/auth/auth.model.js';
 
 export const requireAuth = async (req, res, next) => {
     try {
@@ -13,7 +13,8 @@ export const requireAuth = async (req, res, next) => {
         const decoded = verifyAccessToken(token);
 
         //check the user in db
-        const result = await User.findById(decoded.id).select("name email role");
+        //! Check here there might be a bug
+        const result = await User.findById(decoded.userId).select("name email role");
 
         if(!result) {
             throw ApiError.unauthorized("User not authorized");

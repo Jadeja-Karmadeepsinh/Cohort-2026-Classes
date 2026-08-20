@@ -2,7 +2,7 @@
 // to verify a token we need to give token and jwt secret
 
 import crypto from 'crypto'
-import { jwt } from 'jsonwebtoken'
+import jwt from 'jsonwebtoken'
 import { env } from '../config/env.js'
 import { ApiError } from './api-error.js'
 

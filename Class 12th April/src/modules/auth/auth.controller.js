@@ -55,13 +55,16 @@ export class AuthController {
 
     static async refresh(req, res, next) {
         try {
-            const token = res.cookies?.refreshToken;
+            const token = req.cookies?.refreshToken;
 
             if(!token) {
                 throw ApiError.unauthorized("Refresh token is missing");
             }
 
             const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await AuthService.refresh(token);
+
+            setAccessCookie(res, newAccessToken);
+            setRefreshCookie(res, newRefreshToken);
 
             ApiResponse.ok(res, "Access token refreshed successfully", null);
         } catch (error) {
@@ -71,7 +74,7 @@ export class AuthController {
 
     static async logout(req, res, next) {
         try {
-            const token = res.cookies?.refreshToken;
+            const token = req.cookies?.refreshToken;
 
             if(!token) {
                 throw ApiError.unauthorized("Refresh token is missing");
