@@ -7,6 +7,7 @@ const broadcasterSchema = new Schema({
         type: String,
         trim: true,
         required: [true, "Broadcaster name is required"],
+        unique: true,
         minlength: [2, "Broadcaster name must be at least 2 characters"],
         maxlength: [100, "Broadcaster name cannot exceed 100 characters"],
     },

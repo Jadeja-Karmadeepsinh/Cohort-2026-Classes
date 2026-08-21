@@ -8,6 +8,7 @@ const sponsorSchema = new Schema({
         required: [true, "Sponsor name is required"],
         minlength: [2, "Sponsor name must be at least 2 characters"],
         maxlength: [100, "Sponsor name cannot exceed 100 characters"],
+        unique: true,
         trim: true
     },
     industry: {

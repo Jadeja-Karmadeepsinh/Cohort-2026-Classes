@@ -8,7 +8,8 @@ const venueModel = new Schema({
         minlength: 10,
         maxlength: 100,
         trim: true,
-        required: [true, "Venue name is required"],
+        unique: true,
+        required: [true, "Venue name is required"]
     },
     city: {
         type: String,

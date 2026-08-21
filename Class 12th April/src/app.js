@@ -6,6 +6,9 @@ import { authRoutes } from './modules/auth/auth.routes.js';
 import { playerRoutes } from './modules/ipl-ms/players/player.routes.js';
 import { teamRoutes } from './modules/ipl-ms/teams/team.routes.js';
 import { venueRoutes } from './modules/ipl-ms/venues/venue.routes.js';
+import { broadcasterRoutes } from './modules/ipl-ms/broadcasters/broadcaster.routes.js';
+import { sponsorRoutes } from './modules/ipl-ms/sponsors/sonsor.routes.js';
+import { teamSponsorRoutes } from './modules/ipl-ms/sponsors/teamSponsor.routes.js';
 
 const app = express();
 
@@ -42,6 +45,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/player', playerRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/venue', venueRoutes);
+app.use('/api/broadcaster', broadcasterRoutes);
+app.use('/api/sponsor', sponsorRoutes);
+app.use('/api/teamsponsor', teamSponsorRoutes);
 
 //! global error middleware
 app.use(errorHadler);

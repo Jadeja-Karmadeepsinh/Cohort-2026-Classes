@@ -6,6 +6,7 @@ import { VenueController } from "./venue.controller.js";
 
 const router = Router();
 
+//* All Routes Working
 //public routes
 router.get('/', authLimiter, requireAuth, VenueController.getAllVenues);
 router.get('/:venueId', authLimiter, requireAuth, VenueController.getVenueById);
