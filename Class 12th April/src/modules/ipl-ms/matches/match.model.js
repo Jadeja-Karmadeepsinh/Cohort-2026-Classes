@@ -29,7 +29,8 @@ const matchSchema = new Schema({
     status: {
         type: String,
         enum: ["scheduled", "live", "completed", "cancelled"],
-        default: "scheduled" 
+        default: "scheduled",
+        required: true
     }
 }, { timestamps: true });
 
