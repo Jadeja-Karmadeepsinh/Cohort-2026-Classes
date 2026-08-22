@@ -5,6 +5,7 @@ const { Schema } = mongoose;
 const seasonSchema = new Schema({
     year: {
         type: Number,
+        unique: true,
         required: [true, "Season year is required"],
         min: [2008, "Invalid season year"]
     },
