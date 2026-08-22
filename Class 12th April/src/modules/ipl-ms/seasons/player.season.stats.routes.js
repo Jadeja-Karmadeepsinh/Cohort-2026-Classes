@@ -6,9 +6,10 @@ import { PlayerSeasonStatsController } from "./player.season.stats.controller.js
 
 const router = Router();
 
+//* All Routes Working
 // Public routes
 
-// Get all stats
+//* Get all stats
 router.get(
     "/",
     authLimiter,
@@ -16,7 +17,7 @@ router.get(
     PlayerSeasonStatsController.getAllStats
 );
 
-// Get all stats for a season
+//* Get all stats for a season
 router.get(
     "/season/:seasonId",
     authLimiter,
@@ -24,7 +25,7 @@ router.get(
     PlayerSeasonStatsController.getStatsBySeason
 );
 
-// Get top 10 runs for a season
+//* Get top 10 runs for a season
 router.get(
     "/season/:seasonId/top10runs",
     authLimiter,
@@ -32,7 +33,7 @@ router.get(
     PlayerSeasonStatsController.getTop10Runs
 );
 
-// Get top 10 wickets for a season
+//* Get top 10 wickets for a season
 router.get(
     "/season/:seasonId/top10wickets",
     authLimiter,
@@ -40,7 +41,7 @@ router.get(
     PlayerSeasonStatsController.getTop10Wickets
 );
 
-// Get top 10 catches for a season
+//* Get top 10 catches for a season
 router.get(
     "/season/:seasonId/top10catches",
     authLimiter,
@@ -48,7 +49,7 @@ router.get(
     PlayerSeasonStatsController.getTop10Catches
 );
 
-// Get top 10 fours for a season
+//* Get top 10 fours for a season
 router.get(
     "/season/:seasonId/top10fours",
     authLimiter,
@@ -56,7 +57,7 @@ router.get(
     PlayerSeasonStatsController.getTop10Fours
 );
 
-// Get top 10 sixes for a season
+//* Get top 10 sixes for a season
 router.get(
     "/season/:seasonId/top10sixes",
     authLimiter,
@@ -64,7 +65,7 @@ router.get(
     PlayerSeasonStatsController.getTop10Sixes
 );
 
-// Get all stats of a player across all seasons
+//* Get all stats of a player across all seasons
 router.get(
     "/player/:playerId",
     authLimiter,
@@ -72,7 +73,7 @@ router.get(
     PlayerSeasonStatsController.getStatsByPlayer
 );
 
-// Get individual stat document
+//* Get individual stat document
 router.get(
     "/:statId",
     authLimiter,
@@ -83,7 +84,7 @@ router.get(
 
 // Admin routes
 
-// Register a stat
+//* Register a stat
 router.post(
     "/",
     requireAuth,
@@ -91,7 +92,7 @@ router.post(
     PlayerSeasonStatsController.registerStat
 );
 
-// Update a stat
+//* Update a stat
 router.patch(
     "/:statId",
     requireAuth,
@@ -99,7 +100,7 @@ router.patch(
     PlayerSeasonStatsController.updateStatById
 );
 
-// Delete a stat
+//* Delete a stat
 router.delete(
     "/:statId",
     requireAuth,
