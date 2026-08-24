@@ -1,0 +1,751 @@
+Yep. This is another concept that becomes **very easy once you understand the keys**.
+
+First, one correction: the usual terms are **symmetric cryptography** and **asymmetric cryptography**. They can be used for authentication, encryption, or both.
+
+The main difference is:
+
+> **Symmetric → same secret key is used to create and verify the proof.**
+> **Asymmetric → different keys are used: private key signs, public key verifies.**
+
+---
+
+# 1. Symmetric cryptography
+
+There is **one shared secret key**.
+
+```text
+              SAME SECRET KEY
+                    🔑
+             ┌──────┴──────┐
+             ▼             ▼
+           Server         Server
+```
+
+Both sides must know the same secret.
+
+For example:
+
+```text
+Secret = "my-super-secret-key"
+```
+
+The server uses this secret to create/verify a signature.
+
+---
+
+# 2. Symmetric authentication with JWT
+
+This is very relevant to your Express project.
+
+Suppose your server has:
+
+```js
+const JWT_SECRET = "my-super-secret-key";
+```
+
+When the user logs in:
+
+```text
+User
+  ↓
+Login
+  ↓
+Server verifies password
+  ↓
+Server creates JWT
+  ↓
+JWT signed using SECRET
+```
+
+Conceptually:
+
+```text
+JWT payload
+    +
+secret key
+    ↓
+signature
+```
+
+The token might look like:
+
+```text
+xxxxx.yyyyy.zzzzz
+```
+
+The server sends it to the client.
+
+---
+
+# 3. Later, the client sends the JWT
+
+```http
+Authorization: Bearer <JWT>
+```
+
+Your server does:
+
+```js
+jwt.verify(token, JWT_SECRET);
+```
+
+The same secret is used to verify the signature.
+
+So:
+
+```text
+              SAME SECRET
+                   🔑
+                  / \
+                 /   \
+                ▼     ▼
+           Sign JWT   Verify JWT
+```
+
+That's **symmetric**.
+
+---
+
+# 4. The problem with symmetric authentication
+
+Imagine you have:
+
+```text
+Server A
+Server B
+Server C
+```
+
+All three need to verify JWTs.
+
+With symmetric JWT:
+
+```text
+Server A ─┐
+Server B ─┼──→ SAME SECRET
+Server C ─┘
+```
+
+Every server needs access to the secret.
+
+But here's the problem:
+
+**Anyone who has the secret can potentially create valid tokens.**
+
+For example, suppose:
+
+```text
+JWT_SECRET = "abc123"
+```
+
+Server A can sign:
+
+```text
+{
+    userId: 123,
+    role: "admin"
+}
+```
+
+But Server B can also sign one.
+
+And Server C can also sign one.
+
+Because they all have the same secret.
+
+That's where asymmetric cryptography becomes useful.
+
+---
+
+# 5. Asymmetric cryptography
+
+Asymmetric cryptography uses **two keys**:
+
+```text
+Private Key 🔐
+Public Key  🔓
+```
+
+They are mathematically related, but they serve different purposes.
+
+The most important rule for authentication/signatures is:
+
+> **Private key signs. Public key verifies.**
+
+Like this:
+
+```text
+                Private Key 🔐
+                      │
+                      ▼
+                 Sign token
+                      │
+                      ▼
+                     JWT
+                      │
+                      ▼
+               Public Key 🔓
+                      │
+                      ▼
+                Verify token
+```
+
+---
+
+# 6. Think of it like a signature
+
+Imagine you are a government authority.
+
+You have a special:
+
+```text
+Private stamp 🔐
+```
+
+Only **you** possess it.
+
+You use it to sign certificates.
+
+Everyone else gets:
+
+```text
+Public verification tool 🔓
+```
+
+They can check:
+
+> "Was this certificate actually signed by the authority?"
+
+But they cannot use the public key to create an equivalent valid signature.
+
+That's the basic idea.
+
+---
+
+# 7. Asymmetric JWT
+
+Instead of:
+
+```js
+jwt.sign(payload, SECRET)
+```
+
+you have something conceptually like:
+
+```js
+jwt.sign(payload, PRIVATE_KEY)
+```
+
+The authentication server has:
+
+```text
+PRIVATE KEY 🔐
+```
+
+It signs the JWT.
+
+Other services have:
+
+```text
+PUBLIC KEY 🔓
+```
+
+They verify the JWT.
+
+---
+
+# 8. Example architecture
+
+Imagine you have:
+
+```text
+              Authentication Server
+                       │
+                 PRIVATE KEY 🔐
+                       │
+                       ▼
+                  Creates JWT
+                       │
+                       ▼
+                     Client
+                       │
+                       │ JWT
+                       ▼
+              ┌──────────────────┐
+              │                  │
+              ▼                  ▼
+          API Server A       API Server B
+          PUBLIC KEY 🔓      PUBLIC KEY 🔓
+              │                  │
+              ▼                  ▼
+           Verify JWT         Verify JWT
+```
+
+Notice something important:
+
+### API servers don't need the private key.
+
+They only need the public key.
+
+---
+
+# 9. Why that's powerful
+
+Suppose API Server A gets hacked.
+
+The attacker might obtain:
+
+```text
+PUBLIC KEY 🔓
+```
+
+Can they create valid JWTs?
+
+**No.**
+
+They can only verify tokens.
+
+They don't have:
+
+```text
+PRIVATE KEY 🔐
+```
+
+So they can't sign new tokens.
+
+This is one of the biggest advantages of asymmetric authentication.
+
+---
+
+# 10. Symmetric vs asymmetric
+
+Here's the comparison:
+
+|                                       | Symmetric               | Asymmetric                       |
+| ------------------------------------- | ----------------------- | -------------------------------- |
+| Keys                                  | 1                       | 2                                |
+| Signing key                           | Secret key              | Private key                      |
+| Verification key                      | Same secret             | Public key                       |
+| Private signing material distributed? | Yes                     | No                               |
+| Can verifier create tokens?           | Potentially yes         | No                               |
+| Key distribution                      | More difficult at scale | Easier for verification          |
+| Common JWT algorithms                 | HS256, HS384, HS512     | RS256, RS384, RS512, ES256, etc. |
+| Speed                                 | Generally faster        | Generally slower                 |
+| Good for                              | Shared-secret systems   | Distributed systems              |
+
+---
+
+# 11. HS256 vs RS256
+
+This is something you'll see constantly when working with JWT.
+
+### HS256
+
+```text
+H = HMAC
+S = SHA-256
+```
+
+It uses a **shared secret**.
+
+```js
+jwt.sign(payload, JWT_SECRET, {
+    algorithm: "HS256"
+});
+```
+
+Verification:
+
+```js
+jwt.verify(token, JWT_SECRET);
+```
+
+So:
+
+```text
+Secret 🔑
+   │
+   ├── Sign
+   │
+   └── Verify
+```
+
+That's symmetric.
+
+---
+
+### RS256
+
+RS256 uses **RSA public/private keys**.
+
+Signing:
+
+```text
+Private Key 🔐
+      ↓
+    Sign
+      ↓
+    JWT
+```
+
+Verification:
+
+```text
+JWT
+ ↓
+Public Key 🔓
+ ↓
+Verify
+```
+
+That's asymmetric.
+
+---
+
+# 12. Why would you use RS256?
+
+Imagine your architecture becomes:
+
+```text
+                 Auth Service
+                      │
+                Private Key 🔐
+                      │
+                      ▼
+                   JWT
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+       API A        API B        API C
+       🔓             🔓           🔓
+    Public Key     Public Key   Public Key
+```
+
+Only the authentication service needs the private key.
+
+Every API can verify tokens without being capable of creating them.
+
+This is very useful in **microservices** and larger distributed architectures.
+
+---
+
+# 13. Symmetric is not "bad"
+
+Don't make the mistake of thinking:
+
+```text
+Symmetric = bad
+Asymmetric = good
+```
+
+That's not true.
+
+For a normal MERN application:
+
+```text
+React
+  ↓
+Express API
+  ↓
+MongoDB
+```
+
+using:
+
+```text
+JWT + HS256
+```
+
+can be perfectly reasonable.
+
+You have one backend responsible for authentication.
+
+So keeping one strong secret in your environment:
+
+```env
+JWT_SECRET=very-long-random-secret
+```
+
+is straightforward.
+
+---
+
+# 14. Asymmetric becomes more useful as architecture grows
+
+Imagine your project eventually becomes:
+
+```text
+                 Auth Service
+                      │
+                      ▼
+                    JWT
+                      │
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+   User Service   Player Service  Match Service
+        │             │             │
+        └─────────────┼─────────────┘
+                      ▼
+                  Statistics
+```
+
+You don't necessarily want every service to have the authentication service's **private signing key**.
+
+Instead:
+
+```text
+Auth Service
+    │
+Private Key 🔐
+    │
+    ▼
+ Sign JWT
+```
+
+and:
+
+```text
+Other Services
+    │
+Public Key 🔓
+    │
+    ▼
+Verify JWT
+```
+
+Much better separation.
+
+---
+
+# 15. One very important distinction
+
+Don't confuse **encryption** and **signing**.
+
+For authentication, we're usually talking about **digital signatures**.
+
+### Signing
+
+```text
+Private Key
+     ↓
+   Sign
+     ↓
+Message
+```
+
+Public key verifies:
+
+```text
+Message + Signature
+          ↓
+    Public Key
+          ↓
+       Valid? ✅
+```
+
+This proves:
+
+> "This message was signed by whoever controls the private key, and it wasn't modified."
+
+---
+
+### Encryption
+
+Encryption is different.
+
+For public-key encryption, conceptually:
+
+```text
+Public Key 🔓
+     ↓
+  Encrypt
+     ↓
+Ciphertext
+     ↓
+Private Key 🔐
+     ↓
+  Decrypt
+```
+
+Here the purpose is **confidentiality**.
+
+With JWT authentication, you're generally interested in **signing/verification**, not encrypting the JWT.
+
+---
+
+# 16. Another easy analogy
+
+Imagine you own a company stamp.
+
+### Symmetric
+
+You and your employee both have the **same stamp**.
+
+```text
+           Same stamp
+              🔴
+             /  \
+            /    \
+           You   Employee
+```
+
+Both can:
+
+* create stamped documents
+* verify stamped documents
+
+But if the employee loses the stamp, someone else can potentially create documents too.
+
+---
+
+### Asymmetric
+
+You have:
+
+```text
+Private stamp 🔐
+```
+
+Everyone gets:
+
+```text
+Public verification tool 🔓
+```
+
+You:
+
+```text
+Private key
+     ↓
+Sign documents
+```
+
+Everyone:
+
+```text
+Public key
+     ↓
+Verify documents
+```
+
+But they can't create your signature.
+
+---
+
+# 17. Connect this to your JWT learning
+
+You can now think of JWT authentication as having **two separate questions**:
+
+### Question 1: Stateful or stateless?
+
+This asks:
+
+> **Where is the authentication state stored?**
+
+```text
+Stateful
+→ Server stores session
+
+Stateless
+→ Client carries a verifiable token
+```
+
+### Question 2: Symmetric or asymmetric?
+
+This asks:
+
+> **How is the token's signature created and verified?**
+
+```text
+Symmetric
+→ Same secret signs + verifies
+
+Asymmetric
+→ Private key signs
+→ Public key verifies
+```
+
+These are **different concepts**.
+
+---
+
+# 18. Put the two concepts together
+
+You can have:
+
+### Stateless + symmetric
+
+```text
+JWT
++
+HS256
++
+Secret key
+```
+
+```text
+Client
+  ↓
+JWT
+  ↓
+Server
+  ↓
+Verify using SECRET
+```
+
+---
+
+### Stateless + asymmetric
+
+```text
+JWT
++
+RS256
++
+Private/Public keys
+```
+
+```text
+Auth Server
+    ↓
+Private Key
+    ↓
+JWT
+    ↓
+Client
+    ↓
+API Server
+    ↓
+Public Key
+    ↓
+Verify
+```
+
+This distinction is **very important**.
+
+---
+
+## The 4 combinations to remember
+
+| Authentication state | Cryptography                 | Example                           |
+| -------------------- | ---------------------------- | --------------------------------- |
+| Stateful             | Symmetric/session mechanisms | Session ID + server session store |
+| Stateful             | Asymmetric                   | Possible, though less typical     |
+| Stateless            | Symmetric                    | JWT + HS256                       |
+| Stateless            | Asymmetric                   | JWT + RS256                       |
+
+So don't think:
+
+> **Stateful = symmetric**
+
+or:
+
+> **Stateless = asymmetric**
+
+They are **independent dimensions**.
+
+### The one-line memory trick:
+
+> **Stateful/stateless tells you whether the server remembers the session.**
+
+> **Symmetric/asymmetric tells you whether signing and verification use the same key or different keys.**

@@ -1,0 +1,2137 @@
+Yes. And since you want to be **properly prepared before the next class**, I think the best approach is not to memorize random OIDC terms. You should understand the **entire system from the ground up**, and especially understand how the pieces you already know—JWT, authentication, authorization, symmetric/asymmetric keys, stateless auth—fit into OIDC.
+
+I checked the current OpenID Foundation specifications as well: **OIDC Core is an identity layer built on OAuth 2.0**, while Discovery defines how clients discover an OpenID Provider and its endpoints. ([OpenID Foundation][1])
+
+Let's build the whole picture.
+
+---
+
+# 1. First: What problem does OIDC actually solve?
+
+Suppose you have your application:
+
+```text
+myapp.com
+```
+
+You want users to be able to click:
+
+```text
+Login with Google
+```
+
+Instead of making your application handle:
+
+```text
+username
+password
+password hashing
+password reset
+MFA
+email verification
+login sessions
+etc.
+```
+
+Google handles the authentication.
+
+Your application basically says:
+
+> "Google, authenticate this person and tell me who they are."
+
+Google says:
+
+> "Sure. This person is user X, their email is [X@example.com](mailto:X@example.com), and I authenticated them."
+
+That is the basic idea behind **OpenID Connect**.
+
+OIDC's core purpose is **authentication + identity information**, built on top of OAuth 2.0. ([OpenID Foundation][1])
+
+---
+
+# 2. OIDC vs OAuth 2.0
+
+This is probably the **single most important distinction** you need to understand.
+
+## OAuth 2.0
+
+OAuth answers:
+
+> **"Can this application access this resource?"**
+
+For example:
+
+```text
+Can Spotify access my Google Drive files?
+```
+
+or:
+
+```text
+Can this application access my Google Calendar?
+```
+
+OAuth is primarily about **authorization**.
+
+---
+
+## OIDC
+
+OIDC answers:
+
+> **"Who is this user?"**
+
+For example:
+
+```text
+Who logged into my application using Google?
+```
+
+So:
+
+```text
+OAuth 2.0
+    ↓
+Authorization
+    ↓
+"What can this application access?"
+```
+
+while:
+
+```text
+OIDC
+    ↓
+Authentication / Identity
+    ↓
+"Who is this user?"
+```
+
+OIDC is an **identity layer on top of OAuth 2.0**. ([OpenID Foundation][2])
+
+---
+
+# 3. The easiest way to remember it
+
+Imagine Google.
+
+### OAuth
+
+You tell Google:
+
+> Give Spotify permission to access my YouTube data.
+
+Google gives Spotify an:
+
+```text
+access_token
+```
+
+Spotify uses that token to access an API.
+
+---
+
+### OIDC
+
+You tell Google:
+
+> I want to log into Spotify using my Google account.
+
+Google authenticates you and gives Spotify an:
+
+```text
+id_token
+```
+
+That token contains information about your identity.
+
+For example:
+
+```json
+{
+  "iss": "https://accounts.google.com",
+  "sub": "123456789",
+  "aud": "spotify-client-id",
+  "email": "user@example.com",
+  "email_verified": true
+}
+```
+
+So:
+
+**access token → access resources**
+
+**ID token → information about authentication/identity**
+
+This distinction is extremely important.
+
+---
+
+# 4. The people involved
+
+OIDC has several terms that initially make it confusing.
+
+There are basically three important actors.
+
+## 1. End User
+
+That's you.
+
+```text
+You
+```
+
+The person trying to log in.
+
+---
+
+## 2. OpenID Provider — OP
+
+This is Google in:
+
+```text
+Login with Google
+```
+
+Google is the **OpenID Provider**.
+
+The OP:
+
+* authenticates the user
+* issues tokens
+* provides user information
+* exposes OIDC endpoints
+* publishes public keys
+
+So:
+
+```text
+Google
+   ↓
+OpenID Provider
+```
+
+---
+
+## 3. Relying Party — RP
+
+This is your application.
+
+For example:
+
+```text
+spotify.com
+```
+
+Spotify relies on Google to authenticate the user.
+
+Therefore:
+
+```text
+Spotify
+   ↓
+Relying Party
+```
+
+---
+
+# 5. The basic architecture
+
+The whole thing looks like:
+
+```text
+                    ┌──────────────────┐
+                    │      USER        │
+                    │                  │
+                    │      You         │
+                    └────────┬─────────┘
+                             │
+                             │ Login
+                             ▼
+                    ┌──────────────────┐
+                    │   Relying Party  │
+                    │                  │
+                    │    MyApp.com     │
+                    └────────┬─────────┘
+                             │
+                             │ Authenticate user
+                             ▼
+                    ┌──────────────────┐
+                    │ OpenID Provider  │
+                    │                  │
+                    │      Google      │
+                    └──────────────────┘
+```
+
+The important relationship is:
+
+```text
+MyApp
+  │
+  │ "Google, authenticate this user"
+  ▼
+Google
+  │
+  │ "Done. Here's proof of authentication."
+  ▼
+MyApp
+```
+
+---
+
+# 6. Now your current project makes more sense
+
+You currently have:
+
+```text
+Express Server
+localhost:4000
+```
+
+You are trying to make it behave like an:
+
+```text
+OpenID Provider
+```
+
+Your application would therefore become something like:
+
+```text
+                    Your Express Server
+                    localhost:4000
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+   Authorization        UserInfo           JWKS
+      Endpoint          Endpoint          Endpoint
+```
+
+And your:
+
+```text
+/.well-known/openid-configuration
+```
+
+tells clients where these things are.
+
+That's **Discovery**.
+
+---
+
+# 7. What is Discovery?
+
+Imagine I tell you:
+
+> "I am an OpenID Provider."
+
+You ask:
+
+> "Okay, but where is your authorization endpoint?"
+
+> "Where is your token endpoint?"
+
+> "Where are your public keys?"
+
+> "Where is your UserInfo endpoint?"
+
+You shouldn't have to manually configure every endpoint.
+
+That's what **OpenID Connect Discovery** helps with.
+
+The client can request:
+
+```http
+GET /.well-known/openid-configuration
+```
+
+and receive metadata describing the provider and its endpoints. The Discovery specification exists specifically so clients can discover the OpenID Provider and the endpoints needed to interact with it. ([OpenID Foundation][1])
+
+For example:
+
+```json
+{
+  "issuer": "https://accounts.google.com",
+  "authorization_endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+  "userinfo_endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
+  "jwks_uri": "https://www.googleapis.com/oauth2/v3/certs"
+}
+```
+
+That's basically a **directory of the provider's services**.
+
+---
+
+# 8. `issuer`
+
+This is extremely important.
+
+```json
+{
+    "issuer": "https://accounts.google.com"
+}
+```
+
+It identifies **who issued the tokens**.
+
+Think:
+
+```text
+issuer = identity of the OIDC provider
+```
+
+Your project:
+
+```text
+http://localhost:4000
+```
+
+Google:
+
+```text
+https://accounts.google.com
+```
+
+Later, when you receive an ID token, it contains:
+
+```json
+{
+    "iss": "https://accounts.google.com"
+}
+```
+
+The application can verify:
+
+> "Did this token actually come from the provider I trust?"
+
+---
+
+# 9. Authorization Endpoint
+
+This is where authentication begins.
+
+For example:
+
+```text
+/oauth/authorize
+```
+
+A client redirects the user there.
+
+Something conceptually like:
+
+```text
+MyApp
+   │
+   │ "Login with Google"
+   ▼
+Google authorization endpoint
+   │
+   ▼
+Google Login Page
+```
+
+The user enters:
+
+```text
+email
+password
+```
+
+Google authenticates them.
+
+But here's an important correction to your current understanding:
+
+**The authorization endpoint isn't simply "the login page URL."**
+
+It is an endpoint that **receives an authorization request**, authenticates/gets consent from the user as required, and then sends the appropriate response back to the client.
+
+Your current assignment simplifies this.
+
+Later you'll learn requests containing things like:
+
+```text
+client_id
+redirect_uri
+response_type
+scope
+state
+nonce
+code_challenge
+```
+
+Don't worry if these aren't familiar yet.
+
+We'll get to them.
+
+---
+
+# 10. Why is it called "authorization" if OIDC is authentication?
+
+Because OIDC is built on OAuth 2.0.
+
+OAuth's authorization endpoint is reused.
+
+OIDC adds authentication semantics to the OAuth flow.
+
+That's why the terminology can initially feel weird.
+
+---
+
+# 11. Authorization Code
+
+This is one of the most important concepts you'll learn next.
+
+A common OIDC flow is:
+
+```text
+User
+ ↓
+Client
+ ↓
+Authorization Endpoint
+ ↓
+Login
+ ↓
+Authorization Code
+ ↓
+Token Endpoint
+ ↓
+Tokens
+```
+
+The authorization server doesn't normally just say:
+
+```text
+Here's your access token!
+```
+
+directly through the browser redirect.
+
+Instead, it can return a short-lived:
+
+```text
+authorization code
+```
+
+Example:
+
+```text
+https://myapp.com/callback?code=abc123
+```
+
+Then the backend exchanges:
+
+```text
+code=abc123
+```
+
+for tokens.
+
+---
+
+# 12. Token Endpoint
+
+This is where the client exchanges the authorization code for tokens.
+
+Conceptually:
+
+```http
+POST /oauth/token
+```
+
+Request:
+
+```text
+authorization_code
+        +
+client authentication
+        ↓
+Token Endpoint
+        ↓
+access_token
+id_token
+refresh_token
+```
+
+You haven't implemented this yet.
+
+But this is going to be one of the biggest pieces of your next stage.
+
+---
+
+# 13. The three important tokens
+
+You need to understand these extremely well.
+
+## Access Token
+
+Purpose:
+
+> Access protected APIs/resources.
+
+Example:
+
+```text
+GET /api/profile
+Authorization: Bearer eyJ...
+```
+
+The API validates the access token.
+
+---
+
+## ID Token
+
+Purpose:
+
+> Tell the client about the authentication event and the authenticated user.
+
+Usually a JWT.
+
+Example payload:
+
+```json
+{
+  "iss": "https://accounts.google.com",
+  "sub": "123456789",
+  "aud": "my-client-id",
+  "exp": 1770000000,
+  "iat": 1769996400,
+  "email": "user@example.com"
+}
+```
+
+This is **OIDC-specific**.
+
+---
+
+## Refresh Token
+
+Purpose:
+
+> Obtain new access tokens without making the user log in again.
+
+Conceptually:
+
+```text
+access token expires
+        ↓
+refresh token
+        ↓
+new access token
+```
+
+Refresh tokens are part of OAuth flows and can be used with OIDC clients too.
+
+---
+
+# 14. What is `sub`?
+
+You'll see this everywhere.
+
+```json
+{
+    "sub": "123456789"
+}
+```
+
+`sub` means:
+
+> **Subject identifier**
+
+It's the identifier of the user **within the issuer's namespace**.
+
+You should generally identify the user using:
+
+```text
+iss + sub
+```
+
+rather than treating email as the fundamental identity identifier.
+
+For example:
+
+```text
+issuer:
+https://accounts.google.com
+
+sub:
+123456789
+```
+
+means:
+
+```text
+Google user 123456789
+```
+
+---
+
+# 15. What are claims?
+
+A claim is basically:
+
+> A statement about an entity.
+
+For example:
+
+```json
+{
+    "sub": "123",
+    "name": "Karmadeepsinh",
+    "email": "user@example.com"
+}
+```
+
+These are claims.
+
+You can think:
+
+```text
+claim = piece of information
+```
+
+Common claims:
+
+```text
+iss
+sub
+aud
+exp
+iat
+name
+email
+email_verified
+picture
+```
+
+---
+
+# 16. JWT enters here
+
+You already know JWT.
+
+OIDC heavily uses JWT.
+
+Remember your JWT structure:
+
+```text
+HEADER.PAYLOAD.SIGNATURE
+```
+
+For example:
+
+```text
+xxxxx.yyyyy.zzzzz
+```
+
+The payload could contain:
+
+```json
+{
+    "iss": "https://accounts.google.com",
+    "sub": "123",
+    "aud": "client123",
+    "exp": 1770000000,
+    "iat": 1769996400
+}
+```
+
+But there's an important security question:
+
+> How does my application know that this JWT wasn't forged?
+
+That's where **digital signatures** and **asymmetric cryptography** enter.
+
+And this is probably the part your next class is going to explain.
+
+---
+
+# 17. Symmetric vs asymmetric
+
+You already asked about this.
+
+### Symmetric
+
+Same secret:
+
+```text
+Secret
+   │
+   ├── sign
+   │
+   └── verify
+```
+
+Example:
+
+```text
+HS256
+```
+
+Both parties need the same secret.
+
+---
+
+### Asymmetric
+
+Two keys:
+
+```text
+Private Key
+Public Key
+```
+
+Private key:
+
+```text
+sign
+```
+
+Public key:
+
+```text
+verify
+```
+
+Conceptually:
+
+```text
+             OP
+             │
+       Private Key
+             │
+             ▼
+        sign JWT
+             │
+             ▼
+        Signed JWT
+             │
+             ▼
+           Client
+             │
+        Public Key
+             │
+             ▼
+        verify JWT
+```
+
+This is incredibly useful for OIDC because the provider can keep its private key secret while clients can retrieve the public key.
+
+---
+
+# 18. This is what JWKS is for
+
+You currently have:
+
+```js
+router.get('/jwks', (req, res) => {
+    return res.json({
+        access_key: env.JWT_ACCESS_SECRET,
+        refresh_key: env.JWT_REFRESH_SECRET
+    })
+})
+```
+
+That's your **temporary educational implementation**.
+
+Actual JWKS isn't:
+
+```json
+{
+    "access_key": "secret",
+    "refresh_key": "secret"
+}
+```
+
+Instead, JWKS means:
+
+> **JSON Web Key Set**
+
+It's a JSON document containing public key information.
+
+Conceptually:
+
+```json
+{
+    "keys": [
+        {
+            "kty": "RSA",
+            "kid": "key-1",
+            "use": "sig",
+            "alg": "RS256",
+            "n": "...",
+            "e": "AQAB"
+        }
+    ]
+}
+```
+
+The important idea is:
+
+```text
+Private key
+     ↓
+kept secret by OP
+
+
+Public key
+     ↓
+published through JWKS
+     ↓
+clients use it to verify signatures
+```
+
+**Never publish the private key.**
+
+---
+
+# 19. Why does JWKS need `kid`?
+
+Imagine you rotate keys.
+
+Today:
+
+```text
+private-key-A
+public-key-A
+```
+
+Tomorrow:
+
+```text
+private-key-B
+public-key-B
+```
+
+Your provider may have both public keys available temporarily.
+
+A JWT can contain:
+
+```json
+{
+    "kid": "key-B"
+}
+```
+
+`kid` means:
+
+> Key ID
+
+The verifier sees:
+
+```text
+kid = key-B
+```
+
+and retrieves the corresponding public key from JWKS.
+
+This becomes important when you learn **key rotation**.
+
+---
+
+# 20. UserInfo Endpoint
+
+This is another major OIDC concept.
+
+For example:
+
+```http
+GET /userinfo
+Authorization: Bearer ACCESS_TOKEN
+```
+
+The provider returns user claims.
+
+For example:
+
+```json
+{
+    "sub": "123456",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "email_verified": true
+}
+```
+
+So:
+
+```text
+ID Token
+    ↓
+authentication information
+
+UserInfo endpoint
+    ↓
+user claims/profile information
+```
+
+The exact details depend on the flow and scopes.
+
+---
+
+# 21. Scopes
+
+You'll definitely encounter this.
+
+A client might request:
+
+```text
+scope=openid email profile
+```
+
+Scopes tell the provider what the client is asking for.
+
+OIDC introduces the mandatory:
+
+```text
+openid
+```
+
+scope.
+
+This is important:
+
+```text
+scope=openid
+```
+
+is what makes an OAuth request an **OIDC authentication request**.
+
+Common scopes:
+
+```text
+openid
+profile
+email
+address
+phone
+```
+
+---
+
+# 22. `profile`
+
+If the client requests:
+
+```text
+scope=profile
+```
+
+it can request profile-related claims such as:
+
+```text
+name
+given_name
+family_name
+picture
+```
+
+---
+
+# 23. `email`
+
+If the client requests:
+
+```text
+scope=email
+```
+
+it can request things like:
+
+```text
+email
+email_verified
+```
+
+---
+
+# 24. Consent
+
+Imagine an application says:
+
+```text
+This application wants:
+
+✓ your email
+✓ your profile
+✓ your calendar
+```
+
+The provider may show a consent screen.
+
+The user decides whether to approve.
+
+Authentication and authorization aren't identical:
+
+```text
+Authentication
+     ↓
+Who are you?
+
+
+Authorization
+     ↓
+What are you allowing this application to do?
+```
+
+OIDC combines authentication with the OAuth authorization framework.
+
+---
+
+# 25. `client_id`
+
+This identifies the application.
+
+Suppose you register:
+
+```text
+MyApp
+```
+
+with Google.
+
+Google gives:
+
+```text
+client_id = abc123
+```
+
+Your application sends:
+
+```text
+client_id=abc123
+```
+
+during the authorization request.
+
+Google can therefore know:
+
+> Which application is requesting authentication?
+
+---
+
+# 26. Client Secret
+
+For confidential clients, you may also have:
+
+```text
+client_secret
+```
+
+Think:
+
+```text
+client_id
+    ↓
+"I'm application ABC"
+
+
+client_secret
+    ↓
+"I can prove I'm application ABC"
+```
+
+But this depends on the type of client.
+
+For example:
+
+```text
+Backend web application
+```
+
+can keep secrets.
+
+A browser SPA cannot safely keep a client secret because users can inspect its code.
+
+That's why different client types use different security approaches.
+
+---
+
+# 27. Redirect URI
+
+This is another **very important** concept.
+
+Suppose your app is:
+
+```text
+https://myapp.com
+```
+
+After Google finishes authentication, Google needs to know:
+
+> Where should I send the user back?
+
+That's the:
+
+```text
+redirect_uri
+```
+
+For example:
+
+```text
+https://myapp.com/auth/callback
+```
+
+Flow:
+
+```text
+MyApp
+   │
+   │ login
+   ▼
+Google
+   │
+   │ authenticate
+   ▼
+https://myapp.com/auth/callback
+```
+
+Google must validate that redirect URI.
+
+Otherwise an attacker could try:
+
+```text
+redirect_uri=https://evil.com
+```
+
+and steal authorization responses.
+
+---
+
+# 28. `state`
+
+Another important security parameter.
+
+The client generates a random value:
+
+```text
+state = abc123xyz
+```
+
+and sends it during authorization.
+
+After authentication, the provider returns:
+
+```text
+state=abc123xyz
+```
+
+The client checks:
+
+```text
+received state
+      ==
+original state
+```
+
+If not:
+
+```text
+REJECT
+```
+
+This helps protect against authorization request injection / CSRF-style attacks.
+
+---
+
+# 29. `nonce`
+
+`nonce` is particularly important for OIDC.
+
+The client generates:
+
+```text
+nonce = random-value
+```
+
+It sends it in the authentication request.
+
+The value is then associated with the ID token.
+
+The client verifies:
+
+```text
+ID token nonce
+      ==
+original nonce
+```
+
+This helps prevent replay and token-substitution attacks.
+
+A useful mental distinction:
+
+```text
+state
+ ↓
+protect authorization flow / client request correlation
+
+
+nonce
+ ↓
+bind the authentication response/ID token to the original request
+```
+
+---
+
+# 30. PKCE
+
+You're almost certainly going to encounter this.
+
+PKCE =
+
+> Proof Key for Code Exchange
+
+It strengthens the authorization-code flow, especially for public clients such as mobile apps and browser applications.
+
+Conceptually:
+
+```text
+Client creates:
+
+code_verifier
+      ↓
+hash it
+      ↓
+code_challenge
+```
+
+The authorization request sends:
+
+```text
+code_challenge
+```
+
+Later, when exchanging the authorization code:
+
+```text
+code_verifier
+```
+
+is sent.
+
+The server verifies:
+
+```text
+Does verifier produce
+the original challenge?
+```
+
+If yes:
+
+```text
+allow token exchange
+```
+
+If no:
+
+```text
+reject
+```
+
+You'll probably learn:
+
+```text
+S256
+```
+
+which is the common secure PKCE method.
+
+---
+
+# 31. The complete Authorization Code + OIDC flow
+
+Now let's put everything together.
+
+Suppose:
+
+```text
+myapp.com
+```
+
+wants:
+
+```text
+Login with Google
+```
+
+### Step 1 — Discovery
+
+MyApp discovers Google:
+
+```http
+GET /.well-known/openid-configuration
+```
+
+Google returns:
+
+```json
+{
+    "issuer": "https://accounts.google.com",
+    "authorization_endpoint": "...",
+    "token_endpoint": "...",
+    "userinfo_endpoint": "...",
+    "jwks_uri": "..."
+}
+```
+
+---
+
+### Step 2 — User clicks login
+
+MyApp redirects:
+
+```text
+Google Authorization Endpoint
+```
+
+with parameters conceptually like:
+
+```text
+client_id
+redirect_uri
+response_type=code
+scope=openid email profile
+state
+nonce
+code_challenge
+```
+
+---
+
+### Step 3 — Google authenticates user
+
+Google shows:
+
+```text
+Login
+```
+
+User enters credentials.
+
+Google authenticates them.
+
+---
+
+### Step 4 — Google redirects back
+
+Google sends:
+
+```text
+https://myapp.com/callback?code=ABC123&state=XYZ
+```
+
+MyApp verifies:
+
+```text
+state == expected state
+```
+
+---
+
+### Step 5 — Backend exchanges code
+
+MyApp sends:
+
+```http
+POST /token
+```
+
+with:
+
+```text
+code
+client_id
+redirect_uri
+code_verifier
+```
+
+---
+
+### Step 6 — Google returns tokens
+
+Something conceptually like:
+
+```json
+{
+    "access_token": "...",
+    "id_token": "...",
+    "refresh_token": "...",
+    "token_type": "Bearer",
+    "expires_in": 3600
+}
+```
+
+---
+
+# 32. Now the ID Token
+
+The ID token could look like:
+
+```text
+HEADER.PAYLOAD.SIGNATURE
+```
+
+Payload:
+
+```json
+{
+    "iss": "https://accounts.google.com",
+    "sub": "123456789",
+    "aud": "my-client-id",
+    "exp": 1770000000,
+    "iat": 1769996400,
+    "nonce": "xyz",
+    "email": "john@example.com",
+    "email_verified": true
+}
+```
+
+The client verifies things like:
+
+```text
+signature
+iss
+aud
+exp
+nonce
+```
+
+---
+
+# 33. How does signature verification work?
+
+Suppose Google signs the ID token using:
+
+```text
+Private RSA key
+```
+
+Google publishes the corresponding public key through:
+
+```text
+jwks_uri
+```
+
+MyApp retrieves:
+
+```text
+JWKS
+```
+
+Then:
+
+```text
+Google
+  │
+  │ private key
+  ▼
+sign ID token
+  │
+  ▼
+ID Token
+  │
+  │
+  ▼
+MyApp
+  │
+  │ public key from JWKS
+  ▼
+verify signature
+```
+
+This is why your current `/jwks` route is only a placeholder.
+
+---
+
+# 34. Audience — `aud`
+
+Suppose Google issued this token for:
+
+```text
+my-client-id
+```
+
+The ID token contains:
+
+```json
+{
+    "aud": "my-client-id"
+}
+```
+
+MyApp checks:
+
+```text
+aud == my-client-id
+```
+
+Why?
+
+Because otherwise an ID token issued to:
+
+```text
+SomeOtherApp
+```
+
+could potentially be incorrectly accepted by:
+
+```text
+MyApp
+```
+
+---
+
+# 35. Issuer — `iss`
+
+Similarly:
+
+```json
+{
+    "iss": "https://accounts.google.com"
+}
+```
+
+MyApp verifies:
+
+```text
+iss == trusted issuer
+```
+
+This prevents accepting a token from an unexpected issuer.
+
+---
+
+# 36. Expiration — `exp`
+
+JWT:
+
+```json
+{
+    "exp": 1770000000
+}
+```
+
+means:
+
+> The token expires at this time.
+
+After expiration:
+
+```text
+reject token
+```
+
+---
+
+# 37. `iat`
+
+```text
+iat
+```
+
+means:
+
+> Issued At
+
+For example:
+
+```json
+{
+    "iat": 1769996400
+}
+```
+
+means the token was issued at that timestamp.
+
+---
+
+# 38. UserInfo flow
+
+If the client wants additional user information:
+
+```http
+GET /userinfo
+Authorization: Bearer ACCESS_TOKEN
+```
+
+Provider validates the access token.
+
+Then returns:
+
+```json
+{
+    "sub": "123456",
+    "name": "John Doe",
+    "email": "john@example.com"
+}
+```
+
+---
+
+# 39. Why do we need both ID Token and UserInfo?
+
+Because they serve slightly different purposes.
+
+Think:
+
+```text
+ID Token
+    ↓
+Proof/information about authentication
+
+
+UserInfo
+    ↓
+API for obtaining user claims
+```
+
+The ID token is intended for the client.
+
+The UserInfo endpoint is a protected resource accessed with an access token.
+
+---
+
+# 40. Your entire project mapped to real OIDC
+
+Your current project:
+
+```text
+localhost:4000
+```
+
+could eventually become:
+
+```text
+                OIDC Provider
+               localhost:4000
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+        ▼            ▼            ▼
+   Discovery     Authorization   JWKS
+        │            │            │
+        │            ▼            │
+        │         Login           │
+        │            │            │
+        │            ▼            │
+        │       Authorization     │
+        │           Code          │
+        │            │            │
+        │            ▼            │
+        │        Token Endpoint   │
+        │            │            │
+        │            ▼            │
+        │      Access + ID Token  │
+        │                         │
+        └────────────┬────────────┘
+                     │
+                     ▼
+                  UserInfo
+```
+
+That's the system you're gradually building.
+
+---
+
+# 41. Where your existing auth module fits
+
+You already have:
+
+```text
+register
+login
+refresh
+logout
+me
+```
+
+Those are your **application's existing authentication APIs**.
+
+OIDC doesn't mean you throw them away.
+
+Instead, you're building an **OIDC layer around/alongside your authentication system**.
+
+Eventually:
+
+```text
+                    OIDC
+                     │
+         ┌───────────┴───────────┐
+         │                       │
+    Authorization             Token
+      Endpoint                Endpoint
+         │                       │
+         └───────────┬───────────┘
+                     │
+                     ▼
+                Your Auth System
+                     │
+                     ▼
+               User Database
+```
+
+So your current exercise of connecting OIDC endpoints to your existing auth module is actually a useful way to understand the architecture.
+
+---
+
+# 42. What you currently know vs what you need to learn
+
+Based on everything you've shown me, I'd divide your knowledge like this.
+
+### You already understand reasonably well
+
+```text
+HTTP
+Express
+Routes
+Middleware
+Authentication
+Authorization
+JWT
+Access tokens
+Refresh tokens
+Cookies
+Stateless authentication
+Symmetric signing
+```
+
+That's actually a good foundation.
+
+---
+
+# 43. Things you need to learn next
+
+These are the important gaps.
+
+### Level 1 — Must understand
+
+```text
+OAuth 2.0
+       ↓
+OAuth actors
+       ↓
+Authorization Server
+       ↓
+Resource Server
+       ↓
+Client
+       ↓
+Authorization Code Flow
+```
+
+Then:
+
+```text
+OIDC
+ ↓
+OP
+RP
+End User
+ID Token
+Claims
+Scopes
+```
+
+---
+
+### Level 2 — Very important
+
+```text
+client_id
+client_secret
+redirect_uri
+authorization code
+state
+nonce
+scope
+response_type
+```
+
+---
+
+### Level 3 — Security
+
+```text
+asymmetric cryptography
+RSA
+private/public keys
+digital signatures
+RS256
+JWKS
+kid
+key rotation
+```
+
+---
+
+### Level 4 — Modern OAuth/OIDC security
+
+```text
+PKCE
+S256
+token validation
+issuer validation
+audience validation
+nonce validation
+state validation
+redirect URI validation
+```
+
+---
+
+### Level 5 — Advanced
+
+Later you can learn:
+
+```text
+Dynamic Client Registration
+Session Management
+Front-channel logout
+Back-channel logout
+Single Sign-On
+Single Logout
+Federation
+Identity Assurance
+```
+
+The OpenID Foundation's current specification family includes Core, Discovery, Dynamic Client Registration, logout-related specifications, Federation, and other extensions. ([OpenID Foundation][1])
+
+**You absolutely do not need all of that before your next class.**
+
+---
+
+# 44. The biggest conceptual picture
+
+If you remember only one diagram from this entire explanation, remember this:
+
+```text
+                         OIDC
+                           │
+                           │
+                   built on OAuth 2.0
+                           │
+                           ▼
+                 ┌───────────────────┐
+                 │     OAuth 2.0     │
+                 │                   │
+                 │  Authorization    │
+                 │                   │
+                 │ "What can app     │
+                 │  access?"         │
+                 └─────────┬─────────┘
+                           │
+                           │ adds identity
+                           ▼
+                 ┌───────────────────┐
+                 │       OIDC        │
+                 │                   │
+                 │ Authentication    │
+                 │ + Identity        │
+                 │                   │
+                 │ "Who is the user?"│
+                 └─────────┬─────────┘
+                           │
+             ┌─────────────┼─────────────┐
+             │             │             │
+             ▼             ▼             ▼
+        ID Token       UserInfo      Discovery
+             │             │             │
+             │             │             │
+             ▼             ▼             ▼
+          Claims       User data     Endpoints
+             │
+             ▼
+       JWT + Signature
+             │
+             ▼
+      Public/private keys
+             │
+             ▼
+           JWKS
+```
+
+---
+
+# 45. And the actual login flow
+
+Memorize this:
+
+```text
+                    USER
+                     │
+                     │ Click Login
+                     ▼
+                  CLIENT
+                     │
+                     │ Authorization Request
+                     ▼
+              AUTHORIZATION
+                 ENDPOINT
+                     │
+                     │
+                     ▼
+              User authenticates
+                     │
+                     │
+                     ▼
+             Authorization Code
+                     │
+                     │
+                     ▼
+               TOKEN ENDPOINT
+                     │
+                     │
+             ┌───────┴────────┐
+             │                │
+             ▼                ▼
+        Access Token       ID Token
+             │                │
+             │                │
+             ▼                ▼
+        API access       User identity
+```
+
+And separately:
+
+```text
+Access Token
+      │
+      ▼
+  UserInfo
+      │
+      ▼
+User Claims
+```
+
+And:
+
+```text
+ID Token
+     │
+     ▼
+verify signature
+     │
+     ▼
+get public key
+     │
+     ▼
+    JWKS
+```
+
+---
+
+# 46. One very important correction about your current project
+
+Your current discovery document:
+
+```js
+{
+    issuer: ISSUER,
+    authorization_endpoint: `${ISSUER}/api/auth/register`,
+    userinfo_endpoint: `${ISSUER}/api/auth/me`,
+    jwks_uri: `${ISSUER}/api/auth/jwks`,
+}
+```
+
+is okay **as a learning exercise based on what you've been taught**.
+
+But don't let yourself internalize:
+
+```text
+authorization_endpoint = register route
+```
+
+as an actual OIDC rule.
+
+It isn't.
+
+Eventually you'll have something more like:
+
+```text
+/oauth/authorize
+/oauth/token
+/oauth/userinfo
+/oauth/jwks
+```
+
+and those endpoints will participate in a specific protocol flow.
+
+Your:
+
+```text
+/api/auth/register
+/api/auth/login
+/api/auth/me
+```
+
+are your application's normal authentication APIs, not inherently OIDC endpoints.
+
+That's one of the most important things I want you to distinguish before your next class.
+
+---
+
+# 47. Your learning roadmap from here
+
+If I were teaching you this based on your current knowledge, I'd go in this exact order:
+
+```text
+1. OAuth 2.0 fundamentals
+        ↓
+2. OAuth actors
+        ↓
+3. Authorization Code Flow
+        ↓
+4. Client ID / Secret
+        ↓
+5. Redirect URI
+        ↓
+6. Authorization Code
+        ↓
+7. Access Token
+        ↓
+8. Refresh Token
+        ↓
+9. PKCE
+        ↓
+10. OIDC
+        ↓
+11. OP / RP / End User
+        ↓
+12. ID Token
+        ↓
+13. Claims
+        ↓
+14. Scopes
+        ↓
+15. Discovery
+        ↓
+16. UserInfo
+        ↓
+17. JWT validation
+        ↓
+18. Asymmetric cryptography
+        ↓
+19. RS256
+        ↓
+20. JWKS
+        ↓
+21. kid / key rotation
+        ↓
+22. state / nonce
+        ↓
+23. Complete OIDC flow
+```
+
+If you understand those **23 things**, OIDC will stop looking like a giant collection of random endpoints and JSON fields.
+
+It becomes one coherent system:
+
+> **OAuth gives you the authorization framework. OIDC adds a standardized identity/authentication layer on top of it. The provider authenticates the user, issues tokens, and publishes metadata and keys so the client can discover the provider and verify what it receives.** ([OpenID Foundation][1])
+
+And given what you've already learned, **you're actually much closer than you think**. Your biggest missing pieces aren't Express or JWT—they're the **OAuth authorization-code flow, ID tokens, asymmetric signatures/JWKS, and the security parameters (`state`, `nonce`, PKCE)**. Once those click, the OIDC pieces you've already built will make a *lot* more sense.
+
+[1]: https://openid.net/wg/connect/specifications/?utm_source=chatgpt.com "AB/Connect Working Group – Specifications - OpenID Foundation"
+[2]: https://openid.net/specs/openid-connect-discovery-1_0-15.html?utm_source=chatgpt.com "Draft: OpenID Connect Discovery 1.0 - draft 15"
