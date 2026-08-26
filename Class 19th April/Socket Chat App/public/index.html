@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>WebSocket Chat</title>
+
+    <style>
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            color: white;
+            font-family: Arial, sans-serif;
+
+            height: 100vh;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .chat-container {
+            width: 90%;
+            max-width: 600px;
+            height: 80vh;
+
+            background-color: #111;
+            border: 1px solid #333;
+            border-radius: 12px;
+
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header */
+
+        .chat-header {
+            padding: 18px;
+
+            background-color: #181818;
+            border-bottom: 1px solid #333;
+
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h2 {
+            font-size: 20px;
+        }
+
+        .status {
+            font-size: 13px;
+            color: #4ade80;
+        }
+
+        /* Messages */
+
+        .messages {
+            flex: 1;
+
+            padding: 20px;
+
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+
+            overflow-y: auto;
+        }
+
+        .message {
+            max-width: 70%;
+
+            padding: 10px 14px;
+
+            border-radius: 10px;
+
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .received {
+            align-self: flex-start;
+            background-color: #252525;
+        }
+
+        .sent {
+            align-self: flex-end;
+            background-color: #2563eb;
+        }
+
+        .message small {
+            display: block;
+
+            margin-top: 4px;
+
+            font-size: 10px;
+            opacity: 0.6;
+        }
+
+        /* Input */
+
+        .chat-input {
+            padding: 15px;
+
+            background-color: #181818;
+            border-top: 1px solid #333;
+
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex: 1;
+
+            padding: 12px 14px;
+
+            background-color: #252525;
+            color: white;
+
+            border: 1px solid #444;
+            border-radius: 8px;
+
+            outline: none;
+        }
+
+        .chat-input input:focus {
+            border-color: #2563eb;
+        }
+
+        .chat-input button {
+            padding: 0 20px;
+
+            background-color: #2563eb;
+            color: white;
+
+            border: none;
+            border-radius: 8px;
+
+            cursor: pointer;
+        }
+
+        .chat-input button:hover {
+            background-color: #1d4ed8;
+        }
+
+
+        /* added */
+
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 4px;
+            height: 24px;
+            padding: 0 10px;
+            color: #888;
+            font-size: 13px;
+        }
+
+        .typing-indicator span {
+            width: 5px;
+            height: 5px;
+            background: #888;
+            border-radius: 50%;
+            animation: typing 1s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        .typing-indicator p {
+            margin-left: 4px;
+        }
+
+        @keyframes typing {
+            0%,
+            60%,
+            100% {
+                opacity: 0.3;
+                transform: translateY(0);
+            }
+        
+            30% {
+                opacity: 1;
+                transform: translateY(-2px);
+            }
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+    <div class="chat-container">
+
+        <!-- Header -->
+
+        <div class="chat-header">
+
+            <h2>WebSocket Chat</h2>
+
+            <span class="status">
+                ● Connected
+            </span>
+
+        </div>
+
+
+        <!-- Messages -->
+
+        <div class="messages" id="messages">
+
+            <div class="message received">
+                Hey! 👋
+                <small>12:40 PM</small>
+            </div>
+
+            <div class="message sent">
+                Hey! What's up?
+                <small>12:41 PM</small>
+            </div>
+
+            <div class="message received">
+                Just testing this WebSocket chat.
+                <small>12:42 PM</small>
+            </div>
+
+        </div>
+
+        <!-- added -->
+        <div id="typing-indicator" class="typing-indicator">
+            <span></span>
+            <span></span>
+            <span></span>
+            <p>Someone is typing...</p>
+        </div>
+
+
+        <!-- Input -->
+
+        <div class="chat-input">
+
+            <input
+                type="text"
+                id="messageInput"
+                placeholder="Type a message..."
+            >
+
+            <button id="sendButton">
+                Send
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        //if your socket server is somewhere else you can give its host in io({}) here
+        const socket = io();
+
+        socket.on('server:message', (data) => {
+            console.log(`Data from server: `, data);
+
+            sendMessage(data);
+
+            //! socket.close(); to close from frontend 
+        });
+
+        const typingIndicator = document.getElementById("typing-indicator");
+
+        socket.on("server:user:typing", (data) => {
+        
+            console.log("Someone is typing:", data);
+        
+            typingIndicator.style.display = "flex";
+        });
+
+        socket.on("server:user:stop-typing", (data) => {
+            console.log("Someone stopped typing:", data);
+
+            typingIndicator.style.display = "none";
+        });
+
+        const input = document.getElementById("messageInput");
+        const sendButton = document.getElementById("sendButton");
+        const messages = document.getElementById("messages");
+
+
+        // Store the user's message handler
+        let messageInputHandler = null;
+        // function debounce(fn, delay = 300) {
+        //     let timer = null;
+        //     return (...args) => {
+        //         if(timer) clearTimeout(timer);
+
+        //         timer = setTimeout(() => fn(...args), delay);
+        //     };
+        // }
+
+        // const emitTyping = debounce((text) => {
+        //     socket.emit('user:typing', { text });
+        // }, 300);
+
+        let typingTimer = null;
+
+        input.addEventListener("input", (e) => {
+            const text = e.target.value;
+
+            if(!text) {
+                clearTimeout(typingTimer);
+                socket.emit("user:stop-typing");
+                return;
+            }
+
+            // emitTyping(text);
+            socket.emit('user:typing', { text });
+
+            // Reset the timer
+            clearTimeout(typingTimer);
+
+            // If no new input for 1 second,
+            // consider the user to have stopped typing
+            typingTimer = setTimeout(() => {
+                socket.emit("user:stop-typing");
+            }, 1000);
+        });
+
+
+        // Function that allows us to attach a handler
+        function onMessageInput(text) {
+            // messageInputHandler = handler;
+            console.log({ message: text });
+
+            //here first parameter is name of event and second is the data
+            // socket.emit('event-name', 'data');
+
+            //now we have sent the data for the user:message event but we are not listening for this event in backend so not listen for this event in backend
+            socket.emit('user:message', { text }); 
+        }
+
+
+        function sendMessage(data) {
+
+            let text = input.value.trim();
+
+            if(data) {
+                text = data.text;
+            }
+
+
+            if (text === "") return;
+
+
+            // Call the attached handler
+            if (messageInputHandler) {
+                messageInputHandler(text);
+            }
+
+
+            // Display the message in the chat UI
+            const message = document.createElement("div");
+
+            if(data) {
+                message.classList.add("message", "received");
+            }else {
+                message.classList.add("message", "sent");
+            }
+
+            message.innerHTML = `
+                ${text}
+                <small>Now</small>
+            `;
+
+
+            messages.appendChild(message);
+
+            //change i made
+            if(!data) {
+                onMessageInput(text);
+            }
+
+
+            input.value = "";
+
+
+            messages.scrollTop = messages.scrollHeight;
+
+        }
+
+
+        sendButton.addEventListener("click", sendMessage);
+
+
+        input.addEventListener("keydown", (event) => {
+
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+
+        });
+
+    </script>
+
+</body>
+
+</html>
