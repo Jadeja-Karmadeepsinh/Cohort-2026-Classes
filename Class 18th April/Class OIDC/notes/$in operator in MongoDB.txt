@@ -1,0 +1,795 @@
+//! DONE
+
+# `$in` operator in MongoDB
+
+If you remember **one sentence**, remember this:
+
+> **`$in` means: “Does this field contain ANY ONE of these values?”**
+
+It is basically MongoDB's version of SQL's **`IN`**.
+
+---
+
+## 1. The basic idea
+
+Suppose your `users` collection contains:
+
+```js
+[
+  { name: "Karma", age: 20, city: "Rajkot" },
+  { name: "Rahul", age: 21, city: "Ahmedabad" },
+  { name: "Amit", age: 22, city: "Mumbai" },
+  { name: "Jay", age: 20, city: "Delhi" }
+]
+```
+
+Now you want users whose city is **Rajkot OR Ahmedabad OR Mumbai**.
+
+You could write:
+
+```js
+db.users.find({
+  city: {
+    $in: ["Rajkot", "Ahmedabad", "Mumbai"]
+  }
+})
+```
+
+MongoDB reads this as:
+
+> Find documents where `city` is **one of** `"Rajkot"`, `"Ahmedabad"`, or `"Mumbai"`.
+
+So the matching users are:
+
+```text
+Karma
+Rahul
+Amit
+```
+
+Jay doesn't match because Delhi isn't in the list.
+
+---
+
+# 2. Think of `$in` as an OR shortcut
+
+This is the most important thing to understand.
+
+This:
+
+```js
+{
+  city: {
+    $in: ["Rajkot", "Ahmedabad", "Mumbai"]
+  }
+}
+```
+
+is conceptually similar to:
+
+```js
+{
+  $or: [
+    { city: "Rajkot" },
+    { city: "Ahmedabad" },
+    { city: "Mumbai" }
+  ]
+}
+```
+
+So:
+
+```text
+$in
+ ↓
+ANY of these values
+ ↓
+OR
+```
+
+### Memory trick
+
+> **`$in` = "IN this list"**
+
+If you say:
+
+> "I want students whose branch is **in** CSE, IT, or ECE."
+
+MongoDB:
+
+```js
+branch: {
+  $in: ["CSE", "IT", "ECE"]
+}
+```
+
+---
+
+# 3. `$in` with numbers
+
+It isn't only for strings.
+
+Suppose:
+
+```js
+[
+  { name: "A", age: 18 },
+  { name: "B", age: 20 },
+  { name: "C", age: 21 },
+  { name: "D", age: 25 }
+]
+```
+
+Find people whose age is either **18, 20, or 25**:
+
+```js
+db.users.find({
+  age: {
+    $in: [18, 20, 25]
+  }
+})
+```
+
+Result:
+
+```text
+A
+B
+D
+```
+
+---
+
+# 4. `$in` is NOT the same as a range
+
+This distinction is extremely important.
+
+### `$in`
+
+```js
+age: {
+  $in: [18, 20, 25]
+}
+```
+
+means:
+
+```text
+18 OR 20 OR 25
+```
+
+It does **not** mean:
+
+```text
+18 through 25
+```
+
+So age `19`, `21`, `22`, `23`, `24` **will not match**.
+
+If you want a range, use `$gte` and `$lte`:
+
+```js
+age: {
+  $gte: 18,
+  $lte: 25
+}
+```
+
+That means:
+
+```text
+18 <= age <= 25
+```
+
+### Remember
+
+```text
+$in  → specific choices
+$gte/$lte → range
+```
+
+---
+
+# 5. `$in` with ObjectIds
+
+This is **very common** when working with MongoDB/Mongoose.
+
+Suppose you have:
+
+```js
+const id1 = new mongoose.Types.ObjectId("...");
+const id2 = new mongoose.Types.ObjectId("...");
+const id3 = new mongoose.Types.ObjectId("...");
+```
+
+You want all posts belonging to any of these three users:
+
+```js
+Post.find({
+  user: {
+    $in: [id1, id2, id3]
+  }
+});
+```
+
+Meaning:
+
+```text
+post.user == id1
+OR
+post.user == id2
+OR
+post.user == id3
+```
+
+This is particularly useful when you're filtering using a list of IDs.
+
+---
+
+# 6. `$in` with arrays — an important special case
+
+Now things get interesting.
+
+Suppose a document looks like:
+
+```js
+{
+  name: "Karma",
+  hobbies: ["coding", "gaming", "gym"]
+}
+```
+
+And you query:
+
+```js
+db.users.find({
+  hobbies: {
+    $in: ["gaming", "football"]
+  }
+})
+```
+
+Will it match?
+
+**Yes.**
+
+Why?
+
+Because MongoDB checks whether the array contains **at least one** of the values supplied to `$in`.
+
+The document has:
+
+```text
+hobbies
+   ↓
+["coding", "gaming", "gym"]
+             ↑
+          MATCH!
+```
+
+`gaming` is in the `$in` list.
+
+So:
+
+```text
+Document array:
+["coding", "gaming", "gym"]
+
+$in:
+["gaming", "football"]
+
+Common value:
+"gaming"
+
+→ MATCH
+```
+
+---
+
+# 7. `$in` does NOT mean the entire array must match
+
+This is another common confusion.
+
+Given:
+
+```js
+{
+  hobbies: ["coding", "gaming", "gym"]
+}
+```
+
+This:
+
+```js
+hobbies: {
+  $in: ["gaming", "football"]
+}
+```
+
+does **not** mean:
+
+> "The hobbies array must equal `["gaming", "football"]`."
+
+Instead:
+
+> "The hobbies array must contain **at least one** value from `["gaming", "football"]`."
+
+---
+
+# 8. `$in` vs `$all`
+
+This distinction is worth remembering.
+
+Suppose:
+
+```js
+{
+  hobbies: ["coding", "gaming", "gym"]
+}
+```
+
+### `$in`
+
+```js
+hobbies: {
+  $in: ["coding", "gaming"]
+}
+```
+
+Means:
+
+> Does the array contain **ANY** of these?
+
+```text
+coding OR gaming
+```
+
+Since it contains both → match.
+
+Even if it contained only:
+
+```js
+["coding", "gym"]
+```
+
+it would still match.
+
+---
+
+### `$all`
+
+```js
+hobbies: {
+  $all: ["coding", "gaming"]
+}
+```
+
+Means:
+
+> Does the array contain **ALL** of these?
+
+Now both must exist.
+
+```text
+coding AND gaming
+```
+
+### Memory:
+
+```text
+$in  → ANY
+$all → ALL
+```
+
+This is a very useful distinction.
+
+---
+
+# 9. `$in` vs `$nin`
+
+MongoDB also gives you the opposite:
+
+```text
+$in  → included in the list
+$nin → NOT included in the list
+```
+
+For example:
+
+```js
+db.users.find({
+  city: {
+    $in: ["Rajkot", "Ahmedabad"]
+  }
+})
+```
+
+means:
+
+```text
+city = Rajkot OR Ahmedabad
+```
+
+While:
+
+```js
+db.users.find({
+  city: {
+    $nin: ["Rajkot", "Ahmedabad"]
+  }
+})
+```
+
+means:
+
+```text
+city ≠ Rajkot AND city ≠ Ahmedabad
+```
+
+### Easy memory:
+
+> `$in` = **IN the list**
+> `$nin` = **NOT IN the list**
+
+---
+
+# 10. `$in` can be used with `find()`
+
+Most commonly:
+
+```js
+User.find({
+  role: {
+    $in: ["admin", "moderator"]
+  }
+});
+```
+
+This finds users whose role is either:
+
+```text
+admin
+OR
+moderator
+```
+
+---
+
+# 11. `$in` can be used with `updateMany()`
+
+Suppose you want to update users whose role is either `"user"` or `"guest"`:
+
+```js
+db.users.updateMany(
+  {
+    role: {
+      $in: ["user", "guest"]
+    }
+  },
+  {
+    $set: {
+      active: true
+    }
+  }
+);
+```
+
+MongoDB finds all matching documents and sets:
+
+```js
+active: true
+```
+
+---
+
+# 12. `$in` can be used with `deleteMany()`
+
+For example:
+
+```js
+db.users.deleteMany({
+  city: {
+    $in: ["Delhi", "Mumbai"]
+  }
+});
+```
+
+This deletes users whose city is either:
+
+```text
+Delhi
+OR
+Mumbai
+```
+
+---
+
+# 13. `$in` inside Mongoose
+
+With Mongoose:
+
+```js
+const users = await User.find({
+  role: {
+    $in: ["admin", "moderator"]
+  }
+});
+```
+
+Very common in real applications.
+
+For example, authorization:
+
+```js
+if (user.role === "admin" || user.role === "moderator")
+```
+
+can often be represented in a database query as:
+
+```js
+User.find({
+  role: {
+    $in: ["admin", "moderator"]
+  }
+});
+```
+
+---
+
+# 14. A very realistic example
+
+Imagine your movie booking application has:
+
+```js
+{
+  title: "Avengers: Doomsday",
+  language: "English",
+  genre: "Action"
+}
+```
+
+You want movies whose language is either English or Hindi:
+
+```js
+Movie.find({
+  language: {
+    $in: ["English", "Hindi"]
+  }
+});
+```
+
+MongoDB asks for every movie:
+
+```text
+Is language English?
+        OR
+Is language Hindi?
+```
+
+If either answer is yes → document matches.
+
+---
+
+# 15. `$in` is especially useful when the values come from an array
+
+This is where you'll see `$in` **a lot** in backend development.
+
+Suppose your frontend sends:
+
+```js
+const movieIds = [
+  "64abc...",
+  "64def...",
+  "64ghi..."
+];
+```
+
+You want all those movies:
+
+```js
+const movies = await Movie.find({
+  _id: {
+    $in: movieIds
+  }
+});
+```
+
+Instead of manually constructing:
+
+```js
+$or: [
+  { _id: "64abc..." },
+  { _id: "64def..." },
+  { _id: "64ghi..." }
+]
+```
+
+you simply use:
+
+```js
+_id: {
+  $in: movieIds
+}
+```
+
+That's one of the major reasons `$in` exists.
+
+---
+
+# 16. `$in` is a query operator, not an update operator
+
+Compare:
+
+```js
+$in
+```
+
+with:
+
+```js
+$set
+```
+
+`$in` is primarily a **query/selection condition**.
+
+It answers:
+
+> **Which documents should I select?**
+
+Example:
+
+```js
+User.find({
+  age: {
+    $in: [18, 20, 25]
+  }
+});
+```
+
+Whereas `$set` answers:
+
+> **What value should I change/set?**
+
+Example:
+
+```js
+User.updateOne(
+  { _id: id },
+  {
+    $set: {
+      age: 21
+    }
+  }
+);
+```
+
+So mentally separate:
+
+```text
+$in
+ ↓
+Which documents?
+
+$set
+ ↓
+What should I change?
+```
+
+---
+
+# 17. The syntax you should memorize
+
+### Basic
+
+```js
+{
+  field: {
+    $in: [value1, value2, value3]
+  }
+}
+```
+
+For example:
+
+```js
+{
+  status: {
+    $in: ["pending", "confirmed"]
+  }
+}
+```
+
+means:
+
+```text
+status = pending
+OR
+status = confirmed
+```
+
+---
+
+# 18. The complete mental model
+
+Whenever you see:
+
+```js
+{
+  field: {
+    $in: [A, B, C]
+  }
+}
+```
+
+immediately translate it in your head to:
+
+```text
+field == A
+OR
+field == B
+OR
+field == C
+```
+
+That's **the** thing to remember.
+
+And if `field` itself is an array:
+
+```js
+{
+  field: {
+    $in: [A, B, C]
+  }
+}
+```
+
+think:
+
+```text
+Does field's array contain
+A OR B OR C?
+```
+
+---
+
+## 🧠 `$in` cheat sheet
+
+| Operator | Meaning                                     |
+| -------- | ------------------------------------------- |
+| `$in`    | matches **ANY** value in the list           |
+| `$nin`   | matches values **NOT IN** the list          |
+| `$all`   | array must contain **ALL** specified values |
+| `$gte`   | greater than or equal                       |
+| `$lte`   | less than or equal                          |
+| `$gt`    | greater than                                |
+| `$lt`    | less than                                   |
+
+The two most important comparisons:
+
+```text
+$in  → ANY
+$all → ALL
+```
+
+And:
+
+```text
+$in  → IN
+$nin → NOT IN
+```
+
+### One final example
+
+```js
+Movie.find({
+  language: {
+    $in: ["English", "Hindi", "Gujarati"]
+  }
+});
+```
+
+Read it **in English**:
+
+> "Find movies where the language is **in** this list: English, Hindi, or Gujarati."
+
+If you can translate `$in` that way every time, you'll basically never be confused about it.

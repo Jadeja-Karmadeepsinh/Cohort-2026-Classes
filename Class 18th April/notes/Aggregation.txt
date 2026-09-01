@@ -1,0 +1,1162 @@
+//! DONE
+
+Absolutely. Let’s make **MongoDB aggregation** something you can reason about instead of something you memorize.
+
+# 🧠 First: What is aggregation?
+
+Forget MongoDB for a moment.
+
+Imagine you have **1,000 movie bookings**:
+
+```text
+Booking 1 → Avengers → ₹300
+Booking 2 → Spider-Man → ₹250
+Booking 3 → Avengers → ₹300
+Booking 4 → Dune → ₹200
+...
+```
+
+Now someone asks:
+
+> "How much money did each movie make?"
+
+You can't simply `find()` the answer.
+
+You need to:
+
+1. Take all bookings
+2. Group them by movie
+3. Add their prices
+4. Produce a result
+
+That entire **process of taking documents, processing them step-by-step, and producing a new result** is called **aggregation**.
+
+### The simplest definition to remember:
+
+> **Aggregation = putting documents through a pipeline of transformations to calculate, filter, group, sort, reshape, or combine data.**
+
+Think:
+
+```text
+Documents
+    ↓
+┌─────────────┐
+│  Stage 1    │
+│  filter     │
+└─────────────┘
+    ↓
+┌─────────────┐
+│  Stage 2    │
+│  group      │
+└─────────────┘
+    ↓
+┌─────────────┐
+│  Stage 3    │
+│  calculate  │
+└─────────────┘
+    ↓
+Final result
+```
+
+That's aggregation.
+
+---
+
+# 1. Why do we need aggregation?
+
+Suppose your `orders` collection contains:
+
+```js
+[
+  {
+    customer: "Karma",
+    product: "Laptop",
+    price: 80000,
+    quantity: 1
+  },
+  {
+    customer: "Rahul",
+    product: "Phone",
+    price: 30000,
+    quantity: 2
+  },
+  {
+    customer: "Karma",
+    product: "Mouse",
+    price: 2000,
+    quantity: 3
+  }
+]
+```
+
+Now questions start becoming interesting:
+
+### Simple question
+
+> Give me all orders.
+
+```js
+db.orders.find()
+```
+
+Easy.
+
+### But:
+
+> How much revenue did we generate?
+
+You need calculation.
+
+### Or:
+
+> How much did each customer spend?
+
+You need grouping.
+
+### Or:
+
+> Which customer spent the most?
+
+You need grouping + calculation + sorting.
+
+### Or:
+
+> Give me the top 5 customers who spent more than ₹50,000.
+
+Now you need:
+
+```text
+filter
+   ↓
+group
+   ↓
+calculate
+   ↓
+filter
+   ↓
+sort
+   ↓
+limit
+```
+
+This is exactly what aggregation is designed for.
+
+---
+
+# 2. The most important concept: PIPELINE
+
+This is the thing I want you to remember.
+
+MongoDB aggregation uses a **pipeline**.
+
+```js
+db.orders.aggregate([
+    stage1,
+    stage2,
+    stage3
+])
+```
+
+Each stage takes the result from the previous stage.
+
+Think of a factory:
+
+```text
+Raw documents
+     ↓
+ [FILTER]
+     ↓
+Filtered documents
+     ↓
+ [GROUP]
+     ↓
+Grouped documents
+     ↓
+ [SORT]
+     ↓
+Sorted documents
+     ↓
+ [LIMIT]
+     ↓
+Final documents
+```
+
+### Mental model
+
+**`aggregate()` = conveyor belt**
+
+Each document enters the conveyor belt and passes through different machines.
+
+---
+
+# 3. `$match` — FILTER
+
+`$match` is basically:
+
+> **"Which documents do I want to continue?"**
+
+Suppose:
+
+```js
+[
+  { name: "Karma", age: 20 },
+  { name: "Rahul", age: 25 },
+  { name: "Jay", age: 17 }
+]
+```
+
+You want people whose age is at least 18:
+
+```js
+db.users.aggregate([
+  {
+    $match: {
+      age: { $gte: 18 }
+    }
+  }
+])
+```
+
+Result:
+
+```js
+[
+  { name: "Karma", age: 20 },
+  { name: "Rahul", age: 25 }
+]
+```
+
+### Remember:
+
+```text
+$match = WHERE
+```
+
+If you know SQL:
+
+```sql
+SELECT *
+FROM users
+WHERE age >= 18;
+```
+
+is conceptually:
+
+```js
+db.users.aggregate([
+  {
+    $match: {
+      age: { $gte: 18 }
+    }
+  }
+])
+```
+
+---
+
+# 4. `$group` — GROUP THINGS TOGETHER
+
+This is where aggregation becomes powerful.
+
+Suppose:
+
+```js
+[
+  { customer: "Karma", amount: 100 },
+  { customer: "Rahul", amount: 200 },
+  { customer: "Karma", amount: 300 },
+  { customer: "Rahul", amount: 500 }
+]
+```
+
+Question:
+
+> How much did each customer spend?
+
+We group by customer.
+
+```js
+db.orders.aggregate([
+  {
+    $group: {
+      _id: "$customer",
+      totalSpent: {
+        $sum: "$amount"
+      }
+    }
+  }
+])
+```
+
+Result:
+
+```js
+[
+  {
+    _id: "Karma",
+    totalSpent: 400
+  },
+  {
+    _id: "Rahul",
+    totalSpent: 700
+  }
+]
+```
+
+---
+
+# 🧠 Understand `$group` visually
+
+Before:
+
+```text
+Karma → 100
+Rahul → 200
+Karma → 300
+Rahul → 500
+```
+
+`$group` says:
+
+```text
+        GROUP BY customer
+
+Karma:
+   100
+   300
+
+Rahul:
+   200
+   500
+```
+
+Then `$sum` says:
+
+```text
+Karma → 100 + 300 = 400
+Rahul → 200 + 500 = 700
+```
+
+That's it.
+
+---
+
+# 5. What the hell is `_id` inside `$group`?
+
+This confuses almost everyone initially.
+
+When you write:
+
+```js
+$group: {
+    _id: "$customer"
+}
+```
+
+`_id` means:
+
+> **"What should MongoDB use to decide which documents belong to the same group?"**
+
+For example:
+
+```js
+_id: "$customer"
+```
+
+means:
+
+```text
+Group according to customer
+```
+
+So:
+
+```text
+Karma
+Karma
+Rahul
+Rahul
+Jay
+```
+
+becomes:
+
+```text
+Group 1 → Karma
+Group 2 → Rahul
+Group 3 → Jay
+```
+
+You can group by anything.
+
+### Group by city:
+
+```js
+_id: "$city"
+```
+
+### Group by movie:
+
+```js
+_id: "$movie"
+```
+
+### Group by department:
+
+```js
+_id: "$department"
+```
+
+### Group by year:
+
+```js
+_id: "$year"
+```
+
+### Group by multiple fields:
+
+```js
+_id: {
+    city: "$city",
+    department: "$department"
+}
+```
+
+Meaning:
+
+> Create a separate group for every unique city + department combination.
+
+---
+
+# 6. `$sum`
+
+`$sum` adds things.
+
+```js
+total: {
+    $sum: "$amount"
+}
+```
+
+means:
+
+> Add the `amount` of every document inside this group.
+
+You can also count documents:
+
+```js
+count: {
+    $sum: 1
+}
+```
+
+This is extremely important.
+
+Suppose:
+
+```text
+Karma
+Karma
+Karma
+Rahul
+Rahul
+```
+
+Then:
+
+```js
+$group: {
+    _id: "$customer",
+    count: { $sum: 1 }
+}
+```
+
+gives:
+
+```js
+[
+    { _id: "Karma", count: 3 },
+    { _id: "Rahul", count: 2 }
+]
+```
+
+### Memorize:
+
+```text
+$sum: "$amount" → add the values
+$sum: 1         → count documents
+```
+
+---
+
+# 7. `$avg`
+
+Average.
+
+```js
+db.students.aggregate([
+  {
+    $group: {
+      _id: "$class",
+      averageMarks: {
+        $avg: "$marks"
+      }
+    }
+  }
+])
+```
+
+If:
+
+```text
+Class A:
+80
+90
+70
+```
+
+MongoDB calculates:
+
+```text
+(80 + 90 + 70) / 3 = 80
+```
+
+---
+
+# 8. `$min` and `$max`
+
+Find minimum and maximum.
+
+```js
+$group: {
+    _id: "$department",
+
+    highestSalary: {
+        $max: "$salary"
+    },
+
+    lowestSalary: {
+        $min: "$salary"
+    }
+}
+```
+
+---
+
+# 9. `$sort`
+
+Sort the result.
+
+```js
+{
+    $sort: {
+        totalSpent: -1
+    }
+}
+```
+
+Remember:
+
+```text
+1  → ascending
+-1 → descending
+```
+
+So:
+
+```js
+$sort: { totalSpent: -1 }
+```
+
+means:
+
+> Highest spending first.
+
+---
+
+# 10. `$limit`
+
+Only keep a certain number.
+
+```js
+{
+    $limit: 5
+}
+```
+
+Means:
+
+> Give me only the first 5 documents.
+
+---
+
+# 11. Now combine everything
+
+This is where you should start seeing the beauty of aggregation.
+
+Question:
+
+> Find the top 3 customers by total spending.
+
+We have:
+
+```text
+Orders
+ ↓
+GROUP by customer
+ ↓
+SUM their spending
+ ↓
+SORT highest → lowest
+ ↓
+LIMIT 3
+```
+
+MongoDB:
+
+```js
+db.orders.aggregate([
+  {
+    $group: {
+      _id: "$customer",
+      totalSpent: {
+        $sum: "$amount"
+      }
+    }
+  },
+  {
+    $sort: {
+      totalSpent: -1
+    }
+  },
+  {
+    $limit: 3
+  }
+])
+```
+
+Read it like English:
+
+> Take orders → group by customer → calculate total → sort descending → give me 3.
+
+**That is aggregation.**
+
+---
+
+# 12. `$project` — CHANGE WHAT COMES OUT
+
+Suppose your documents are:
+
+```js
+{
+    name: "Karma",
+    age: 20,
+    password: "secret",
+    email: "karma@example.com"
+}
+```
+
+You want only:
+
+```text
+name
+email
+```
+
+You can use `$project`.
+
+```js
+{
+    $project: {
+        name: 1,
+        email: 1
+    }
+}
+```
+
+Result:
+
+```js
+{
+    name: "Karma",
+    email: "karma@example.com"
+}
+```
+
+You can also create calculated fields.
+
+```js
+{
+    $project: {
+        name: 1,
+        totalPrice: {
+            $multiply: ["$price", "$quantity"]
+        }
+    }
+}
+```
+
+So `$project` basically means:
+
+> **"What shape should the output have?"**
+
+---
+
+# 13. `$unwind` — VERY IMPORTANT
+
+This one initially looks weird.
+
+Suppose:
+
+```js
+{
+    name: "Karma",
+    hobbies: ["Gym", "Coding", "Gaming"]
+}
+```
+
+One document contains an array:
+
+```text
+Karma
+ ├── Gym
+ ├── Coding
+ └── Gaming
+```
+
+Now:
+
+```js
+{
+    $unwind: "$hobbies"
+}
+```
+
+turns it into:
+
+```js
+{ name: "Karma", hobbies: "Gym" }
+{ name: "Karma", hobbies: "Coding" }
+{ name: "Karma", hobbies: "Gaming" }
+```
+
+### Remember:
+
+> **`$unwind` = explode an array into separate documents.**
+
+This becomes extremely useful when working with arrays + `$lookup`.
+
+---
+
+# 14. `$lookup` — MongoDB's JOIN
+
+Now connect this to what you asked me earlier about **references**.
+
+Suppose:
+
+### users
+
+```js
+{
+    _id: 1,
+    name: "Karma"
+}
+```
+
+### orders
+
+```js
+{
+    _id: 101,
+    userId: 1,
+    amount: 500
+}
+```
+
+The order stores a **reference**:
+
+```text
+orders.userId → users._id
+```
+
+Now you want:
+
+```text
+Order
++ customer's name
+```
+
+MongoDB can join them using `$lookup`.
+
+```js
+db.orders.aggregate([
+  {
+    $lookup: {
+      from: "users",
+      localField: "userId",
+      foreignField: "_id",
+      as: "user"
+    }
+  }
+])
+```
+
+Result:
+
+```js
+{
+    _id: 101,
+    userId: 1,
+    amount: 500,
+    user: [
+        {
+            _id: 1,
+            name: "Karma"
+        }
+    ]
+}
+```
+
+Notice:
+
+```text
+orders
+   │
+   │ userId
+   ↓
+users
+```
+
+`$lookup` is basically:
+
+> **"Go to this other collection and bring me the matching documents."**
+
+---
+
+# 15. `$lookup` + `$unwind`
+
+Because `$lookup` returns an **array**:
+
+```js
+user: [
+    {
+        name: "Karma"
+    }
+]
+```
+
+You can follow it with:
+
+```js
+{
+    $unwind: "$user"
+}
+```
+
+Now:
+
+```js
+{
+    _id: 101,
+    userId: 1,
+    amount: 500,
+    user: {
+        _id: 1,
+        name: "Karma"
+    }
+}
+```
+
+This combination is incredibly common:
+
+```js
+[
+    {
+        $lookup: {...}
+    },
+    {
+        $unwind: "$user"
+    }
+]
+```
+
+Think:
+
+```text
+$lookup  → bring related documents
+$unwind  → remove the array wrapper
+```
+
+---
+
+# 16. Aggregation vs `find()`
+
+This distinction is important.
+
+### `find()`
+
+Think:
+
+> **"Which existing documents do I want?"**
+
+```js
+db.movies.find({
+    language: "English"
+})
+```
+
+### `aggregate()`
+
+Think:
+
+> **"What processing do I want to perform on my documents?"**
+
+```js
+db.bookings.aggregate([
+    { $match: { status: "confirmed" } },
+    { $group: {
+        _id: "$movieId",
+        bookings: { $sum: 1 }
+    }},
+    { $sort: { bookings: -1 } }
+])
+```
+
+So:
+
+```text
+find()
+   ↓
+retrieve documents
+
+aggregate()
+   ↓
+process documents
+   ↓
+produce transformed result
+```
+
+---
+
+# 17. A REAL example from your movie-ticket project
+
+Let's imagine your MongoDB version of your project has:
+
+### movies
+
+```js
+{
+    _id: 1,
+    title: "Avengers: Doomsday"
+}
+```
+
+### bookings
+
+```js
+{
+    _id: 101,
+    movieId: 1,
+    userId: 50,
+    price: 250
+}
+```
+
+Now the admin asks:
+
+> "Which movies are the most booked?"
+
+Pipeline:
+
+```text
+bookings
+   ↓
+GROUP BY movieId
+   ↓
+COUNT bookings
+   ↓
+SORT highest first
+   ↓
+LOOKUP movie
+   ↓
+show movie title
+```
+
+MongoDB:
+
+```js
+db.bookings.aggregate([
+  {
+    $group: {
+      _id: "$movieId",
+      totalBookings: {
+        $sum: 1
+      }
+    }
+  },
+
+  {
+    $sort: {
+      totalBookings: -1
+    }
+  },
+
+  {
+    $lookup: {
+      from: "movies",
+      localField: "_id",
+      foreignField: "_id",
+      as: "movie"
+    }
+  },
+
+  {
+    $unwind: "$movie"
+  },
+
+  {
+    $project: {
+      _id: 0,
+      movie: "$movie.title",
+      totalBookings: 1
+    }
+  }
+])
+```
+
+Result:
+
+```js
+[
+    {
+        movie: "Avengers: Doomsday",
+        totalBookings: 1532
+    },
+    {
+        movie: "Spider-Man: Brand New Day",
+        totalBookings: 1274
+    },
+    {
+        movie: "Dune: Part Three",
+        totalBookings: 982
+    }
+]
+```
+
+Look at what just happened.
+
+We took boring raw booking documents and **turned them into useful information**.
+
+That's the entire philosophy of aggregation.
+
+---
+
+# 18. The most important stages to remember
+
+Don't try to memorize 50 aggregation operators right now.
+
+Get these into your head:
+
+| Stage      | Think                   |
+| ---------- | ----------------------- |
+| `$match`   | Filter                  |
+| `$group`   | Group                   |
+| `$sum`     | Add / Count             |
+| `$avg`     | Average                 |
+| `$min`     | Minimum                 |
+| `$max`     | Maximum                 |
+| `$sort`    | Sort                    |
+| `$limit`   | Take N                  |
+| `$project` | Reshape output          |
+| `$unwind`  | Explode array           |
+| `$lookup`  | Join another collection |
+
+If you understand those, you already understand the core of aggregation.
+
+---
+
+# 🧠 The "never forget" formula
+
+Whenever you see:
+
+```js
+db.collection.aggregate([
+    ...
+])
+```
+
+immediately ask:
+
+### **"What journey are these documents taking?"**
+
+For example:
+
+```js
+db.orders.aggregate([
+    { $match: { status: "completed" } },
+    { $group: {
+        _id: "$customerId",
+        total: { $sum: "$amount" }
+    }},
+    { $sort: { total: -1 } },
+    { $limit: 5 }
+])
+```
+
+Don't memorize the syntax.
+
+Translate it:
+
+> **Take completed orders → group them by customer → add their amounts → highest first → give me top 5.**
+
+That's aggregation.
+
+---
+
+# 🔥 One final mental picture
+
+Imagine a **water treatment factory**:
+
+```text
+                 MONGODB AGGREGATION
+
+Raw documents
+     │
+     ▼
+┌─────────────┐
+│   $match    │  ← remove what you don't need
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│   $unwind   │  ← explode arrays if necessary
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│   $lookup   │  ← bring related data
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│   $group    │  ← combine documents
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│ $sum / $avg │  ← calculate
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│   $sort     │  ← order
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│   $project  │  ← decide final shape
+└──────┬──────┘
+       ▼
+   Useful result
+```
+
+And the **one sentence** I want you to remember:
+
+> ### **Aggregation is MongoDB's data-processing pipeline: documents enter, each stage transforms/filter/combines them, and the final stage produces the information you actually want.**
+
+Once that mental model is solid, individual operators like `$match`, `$group`, `$lookup`, `$unwind`, etc. stop feeling like random MongoDB syntax—they become **different machines on the same conveyor belt**.
+

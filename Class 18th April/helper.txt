@@ -1,0 +1,262 @@
+12. Your project structure could look like this
+
+I'd eventually structure it something like:
+
+src/
+│
+├── config/
+│ ├── env.js
+│ └── db.js
+│
+├── modules/
+│ │
+│ ├── auth/
+│ │ ├── auth.model.js
+│ │ ├── auth.controller.js
+│ │ ├── auth.service.js
+│ │ ├── auth.repository.js
+│ │ ├── auth.routes.js
+│ │ └── auth.middleware.js
+│ │
+│ └── ipl/
+│ │
+│ ├── teams/
+│ │ ├── team.model.js
+│ │ ├── team.controller.js
+│ │ ├── team.service.js
+│ │ ├── team.repository.js
+│ │ └── team.routes.js
+│ │
+│ ├── players/
+│ │ ├── player.model.js
+│ │ ├── player.controller.js
+│ │ ├── player.service.js
+│ │ ├── player.repository.js
+│ │ └── player.routes.js
+│ │
+│ ├── matches/
+│ ├── venues/
+│ └── seasons/
+│
+├── middleware/
+│ ├── authenticate.js
+│ ├── authorize.js
+│ └── error.js
+│
+├── utils/
+│
+└── app.js
+
+You don't have to start this complicated. Add the structure as the project grows.
+
+13. The beautiful part: Auth and IPL remain independent
+
+Imagine your authentication module knows:
+
+{
+userId: "123",
+role: "admin"
+}
+
+That's basically all the IPL module needs.
+
+It doesn't care whether the user authenticated using:
+
+email/password
+
+or later:
+
+Google OAuth
+
+or:
+
+GitHub OAuth
+
+The Auth module says:
+
+"This is user 123 and they're an admin."
+
+The IPL module says:
+
+"Admins can modify IPL data."
+
+That's separation of concerns.
+
+14. And this project will teach you a LOT of MongoDB
+
+This project is actually perfect for the MongoDB concepts you've been learning recently.
+
+You'll encounter:
+
+References
+Player → Team
+Match → Team
+Match → Venue
+Match → Season
+populate()
+
+For example:
+
+Player.find().populate("team");
+
+So instead of receiving only:
+
+{
+"name": "MS Dhoni",
+"team": "67abc..."
+}
+
+you can retrieve the team information too.
+
+Projection
+
+You might have:
+
+Player.find()
+.select("name role team");
+
+instead of returning every field.
+
+Aggregation
+
+This project will give you real reasons to use aggregation.
+
+For example:
+
+"Show the top 10 run scorers."
+
+or:
+
+"How many matches has each team won?"
+
+or:
+
+"Calculate a player's total runs across all matches."
+
+or:
+
+"Show the points table."
+
+Now aggregation isn't just some MongoDB syntax you're memorizing — you have an actual reason to use it.
+
+15. I'd build the project in stages
+
+Don't start by creating 15 models.
+
+Phase 1 — Authentication
+
+Build:
+
+Register
+Login
+Logout
+JWT
+Password hashing
+Authentication middleware
+Role
+Authorization middleware
+
+Get this working first.
+
+Phase 2 — Teams
+Create team ADMIN
+Get teams USER + ADMIN
+Get team USER + ADMIN
+Update team ADMIN
+Delete team ADMIN
+Phase 3 — Players
+
+Then:
+
+Create player
+Get players
+Get player
+Update player
+Delete player
+
+And establish:
+
+Player → Team
+Phase 4 — Venues
+Create venue
+Get venues
+Update venue
+Delete venue
+Phase 5 — Seasons
+2024
+2025
+2026
+...
+Phase 6 — Matches
+
+Now connect everything:
+
+Match
+├── Team
+├── Team
+├── Venue
+└── Season
+Phase 7 — Statistics
+
+This is where you start heavily using:
+
+Aggregation
+$group
+$sum
+$avg
+$sort
+$lookup
+$unwind
+$project
+$match
+
+And you'll actually understand why you're using them.
+
+16. Eventually your API could look really nice
+
+Something like:
+
+/api/auth
+POST /register
+POST /login
+POST /logout
+
+/api/teams
+GET /
+GET /:id
+POST /
+PATCH /:id
+DELETE /:id
+
+/api/players
+GET /
+GET /:id
+POST /
+PATCH /:id
+DELETE /:id
+
+/api/venues
+GET /
+GET /:id
+POST /
+PATCH /:id
+DELETE /:id
+
+/api/seasons
+GET /
+GET /:id
+
+/api/matches
+GET /
+GET /:id
+POST /
+PATCH /:id
+DELETE /:id
+
+/api/stats
+GET /players/top-scorers
+GET /players/top-wicket-takers
+GET /teams/:id
+GET /points-table
+
+And authorization determines which of those operations a user can perform.

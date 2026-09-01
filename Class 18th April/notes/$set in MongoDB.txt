@@ -1,0 +1,736 @@
+//! DONE
+
+Absolutely. If you understand **`$set` as “change these fields to these values”**, you’ll remember most of MongoDB updates.
+
+## What is `$set`?
+
+`$set` is a **MongoDB update operator** used to **set or change the value of a field** in a document.
+
+Think:
+
+> **`$set` = “Make this field equal to this value.”**
+
+For example, suppose your document is:
+
+```js
+{
+  name: "Karma",
+  age: 20,
+  city: "Rajkot"
+}
+```
+
+You want to change `city` to `"Ahmedabad"`:
+
+```js
+db.users.updateOne(
+  { name: "Karma" },
+  { $set: { city: "Ahmedabad" } }
+)
+```
+
+After the update:
+
+```js
+{
+  name: "Karma",
+  age: 20,
+  city: "Ahmedabad"
+}
+```
+
+Only `city` changed.
+
+---
+
+# The most important thing to remember
+
+Compare these two:
+
+### ❌ Without `$set`
+
+```js
+db.users.updateOne(
+  { name: "Karma" },
+  { city: "Ahmedabad" }
+)
+```
+
+This is **not the normal way to partially update a document**. Without an update operator, MongoDB treats the supplied document as a **replacement document**.
+
+You could end up replacing the existing document with:
+
+```js
+{
+  city: "Ahmedabad"
+}
+```
+
+and losing the other fields.
+
+### ✅ With `$set`
+
+```js
+db.users.updateOne(
+  { name: "Karma" },
+  { $set: { city: "Ahmedabad" } }
+)
+```
+
+MongoDB says:
+
+> "Don't replace the document. Just change the `city` field."
+
+So:
+
+```text
+Existing document
+       ↓
+┌─────────────────────┐
+│ name: Karma         │
+│ age: 20             │
+│ city: Rajkot        │
+└─────────────────────┘
+          ↓
+        $set
+          ↓
+┌─────────────────────┐
+│ name: Karma         │ ← untouched
+│ age: 20             │ ← untouched
+│ city: Ahmedabad     │ ← changed
+└─────────────────────┘
+```
+
+That's the core idea.
+
+---
+
+# `$set` can also create a field
+
+This is extremely important.
+
+Suppose:
+
+```js
+{
+  name: "Karma",
+  age: 20
+}
+```
+
+There is no `city`.
+
+You do:
+
+```js
+db.users.updateOne(
+  { name: "Karma" },
+  { $set: { city: "Rajkot" } }
+)
+```
+
+MongoDB creates the field:
+
+```js
+{
+  name: "Karma",
+  age: 20,
+  city: "Rajkot"
+}
+```
+
+So `$set` really means:
+
+> **"If the field exists, change it. If it doesn't exist, create it."**
+
+---
+
+# `$set` can change multiple fields
+
+You aren't limited to one field.
+
+```js
+db.users.updateOne(
+  { name: "Karma" },
+  {
+    $set: {
+      age: 21,
+      city: "Ahmedabad",
+      isVerified: true
+    }
+  }
+)
+```
+
+Result:
+
+```js
+{
+  name: "Karma",
+  age: 21,
+  city: "Ahmedabad",
+  isVerified: true
+}
+```
+
+Think of `$set` as a collection of instructions:
+
+```text
+age       → 21
+city      → Ahmedabad
+isVerified → true
+```
+
+---
+
+# `$set` does NOT mean "add"
+
+This is another common misconception.
+
+Suppose:
+
+```js
+{
+  age: 20
+}
+```
+
+You do:
+
+```js
+{ $set: { age: 25 } }
+```
+
+It doesn't mean:
+
+```text
+20 + 25
+```
+
+It means:
+
+```text
+age = 25
+```
+
+So:
+
+```text
+$set → assignment
+```
+
+Just like JavaScript:
+
+```js
+user.age = 25;
+```
+
+That's probably the easiest mental connection.
+
+---
+
+# `$set` vs `$inc`
+
+This distinction is extremely important.
+
+Suppose:
+
+```js
+{
+  age: 20
+}
+```
+
+### `$set`
+
+```js
+{ $set: { age: 25 } }
+```
+
+Means:
+
+```text
+age = 25
+```
+
+Result:
+
+```js
+age: 25
+```
+
+### `$inc`
+
+```js
+{ $inc: { age: 5 } }
+```
+
+Means:
+
+```text
+age = age + 5
+```
+
+Result:
+
+```js
+age: 25
+```
+
+They happen to produce the same result here, but they mean completely different things.
+
+Remember:
+
+```text
+$set → assign a value
+$inc → increase/decrease a number
+```
+
+---
+
+# `$set` with nested objects
+
+Suppose you have:
+
+```js
+{
+  name: "Karma",
+  address: {
+    city: "Rajkot",
+    state: "Gujarat",
+    pincode: 360001
+  }
+}
+```
+
+You want to change only the city.
+
+You can use **dot notation**:
+
+```js
+db.users.updateOne(
+  { name: "Karma" },
+  {
+    $set: {
+      "address.city": "Ahmedabad"
+    }
+  }
+)
+```
+
+Result:
+
+```js
+{
+  name: "Karma",
+  address: {
+    city: "Ahmedabad",
+    state: "Gujarat",
+    pincode: 360001
+  }
+}
+```
+
+Only `address.city` changed.
+
+---
+
+# Why dot notation matters
+
+Consider:
+
+```js
+$set: {
+  address: {
+    city: "Ahmedabad"
+  }
+}
+```
+
+This is different.
+
+You're telling MongoDB:
+
+> Set the entire `address` field to this object.
+
+So you can potentially lose:
+
+```js
+state
+pincode
+```
+
+whereas:
+
+```js
+$set: {
+  "address.city": "Ahmedabad"
+}
+```
+
+means:
+
+> Go inside `address` and change only `city`.
+
+This is a very important MongoDB skill.
+
+---
+
+# `$set` with arrays
+
+Suppose:
+
+```js
+{
+  name: "Karma",
+  skills: ["Java", "JavaScript", "MongoDB"]
+}
+```
+
+You can replace the entire array:
+
+```js
+{
+  $set: {
+    skills: ["Java", "JavaScript", "MongoDB", "React"]
+  }
+}
+```
+
+Result:
+
+```js
+{
+  name: "Karma",
+  skills: ["Java", "JavaScript", "MongoDB", "React"]
+}
+```
+
+But remember:
+
+> `$set` replaces the value of the field you specify.
+
+It doesn't automatically append to an array.
+
+For adding an array element, you'd generally use:
+
+```js
+$push
+```
+
+For example:
+
+```js
+{
+  $push: {
+    skills: "React"
+  }
+}
+```
+
+---
+
+# `$set` with Mongoose
+
+Since you're learning MongoDB/Mongoose, you'll frequently see:
+
+```js
+User.updateOne(
+  { _id: userId },
+  {
+    $set: {
+      name: "Karma",
+      age: 21
+    }
+  }
+);
+```
+
+Or:
+
+```js
+await User.findByIdAndUpdate(
+  userId,
+  {
+    $set: {
+      name: "Karma"
+    }
+  },
+  { new: true }
+);
+```
+
+The important distinction:
+
+```js
+$set
+```
+
+is a **MongoDB update operator**.
+
+Mongoose is simply giving you a convenient way to execute MongoDB operations.
+
+---
+
+# `$set` doesn't care whether the field already exists
+
+Think of this:
+
+```js
+$set: {
+    x: value
+}
+```
+
+as:
+
+```js
+if (x exists) {
+    x = value;
+} else {
+    create x with value;
+}
+```
+
+Conceptually, that's what you should remember.
+
+---
+
+# `$set` and timestamps
+
+A very common real-world use:
+
+```js
+{
+  $set: {
+    name: "Karma",
+    updatedAt: new Date()
+  }
+}
+```
+
+You're saying:
+
+```text
+change name
+AND
+change updatedAt
+```
+
+This is why you'll see `$set` everywhere in CRUD applications.
+
+---
+
+# `updateOne()` example from beginning to end
+
+Suppose:
+
+```js
+{
+  _id: ObjectId("..."),
+  username: "karma",
+  email: "karma@gmail.com",
+  age: 20,
+  city: "Rajkot"
+}
+```
+
+You run:
+
+```js
+db.users.updateOne(
+  { username: "karma" },
+  {
+    $set: {
+      city: "Ahmedabad",
+      age: 21
+    }
+  }
+)
+```
+
+MongoDB finds:
+
+```js
+{ username: "karma" }
+```
+
+Then applies:
+
+```text
+city = Ahmedabad
+age = 21
+```
+
+Final document:
+
+```js
+{
+  _id: ObjectId("..."),
+  username: "karma",
+  email: "karma@gmail.com",
+  age: 21,
+  city: "Ahmedabad"
+}
+```
+
+Notice:
+
+```text
+_id       → untouched
+username  → untouched
+email     → untouched
+age       → changed
+city      → changed
+```
+
+That's `$set`.
+
+---
+
+# `$set` inside `updateMany()`
+
+You can also update multiple documents.
+
+Suppose:
+
+```js
+db.users.updateMany(
+  { city: "Rajkot" },
+  {
+    $set: {
+      city: "Ahmedabad"
+    }
+  }
+)
+```
+
+Every matching document gets:
+
+```text
+city → Ahmedabad
+```
+
+---
+
+# `$set` during upsert
+
+There's one more useful concept.
+
+You can combine `$set` with:
+
+```js
+upsert: true
+```
+
+Example:
+
+```js
+db.users.updateOne(
+  { email: "karma@gmail.com" },
+  {
+    $set: {
+      name: "Karma"
+    }
+  },
+  {
+    upsert: true
+  }
+)
+```
+
+Meaning:
+
+> Find this user. If they exist, update them. If they don't exist, create a new document.
+
+This is called an **upsert** = update + insert.
+
+---
+
+# The `$` in `$set`
+
+Why does it start with `$`?
+
+MongoDB uses `$` to identify **operators**.
+
+For example:
+
+```text
+$set
+$inc
+$unset
+$push
+$pull
+$addToSet
+$rename
+```
+
+They tell MongoDB **what operation to perform**.
+
+So:
+
+```js
+{
+  $set: {
+    name: "Karma"
+  }
+}
+```
+
+can be mentally read as:
+
+> **Perform the SET operation on `name`.**
+
+---
+
+# The easiest way to remember all of this
+
+Imagine MongoDB as a huge collection of JSON objects.
+
+You say:
+
+```js
+$set: {
+    field: value
+}
+```
+
+and MongoDB hears:
+
+> **"Go to this document and make this field equal to this value. Don't replace the rest of the document."**
+
+That's it.
+
+### Your mental cheat sheet
+
+| Operator    | Think                                      |
+| ----------- | ------------------------------------------ |
+| `$set`      | **Make it this value**                     |
+| `$unset`    | **Remove this field**                      |
+| `$inc`      | **Increase/decrease this number**          |
+| `$push`     | **Add this to an array**                   |
+| `$pull`     | **Remove this from an array**              |
+| `$addToSet` | **Add to array only if not already there** |
+| `$rename`   | **Rename this field**                      |
+
+And the single most important comparison:
+
+```js
+$set: { age: 25 }
+```
+
+means:
+
+> **age = 25**
+
+while:
+
+```js
+$inc: { age: 5 }
+```
+
+means:
+
+> **age = age + 5**
+
+If you remember **`$set = assignment`**, you'll almost never be confused about `$set` again.

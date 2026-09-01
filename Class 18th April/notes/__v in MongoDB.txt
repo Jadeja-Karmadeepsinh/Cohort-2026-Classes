@@ -1,0 +1,946 @@
+//! DONE
+
+Absolutely. `__v` looks mysterious at first, but once you understand **why Mongoose added it**, it becomes very simple.
+
+# What is `__v` in MongoDB/Mongoose?
+
+If you use **Mongoose**, you may see documents like:
+
+```js
+{
+  _id: ObjectId("..."),
+  name: "Karmadeepsinh",
+  email: "karma@example.com",
+  age: 21,
+  __v: 0
+}
+```
+
+That `__v` is **not a MongoDB feature**.
+
+It is a **Mongoose-managed version key**.
+
+> **MongoDB doesn't create `__v`. Mongoose does.**
+
+This distinction is the first thing to remember.
+
+---
+
+# 1. Why does Mongoose need `__v`?
+
+Think about a document as having a **version number**.
+
+Suppose you create:
+
+```js
+const user = await User.create({
+  name: "Karma",
+  age: 20
+});
+```
+
+Mongoose may store:
+
+```js
+{
+  _id: ObjectId("123"),
+  name: "Karma",
+  age: 20,
+  __v: 0
+}
+```
+
+The meaning is basically:
+
+> "This document is currently at Mongoose version 0."
+
+If the document is modified in ways that Mongoose considers relevant to versioning, the version key can change.
+
+For example, conceptually:
+
+```text
+Document created
+     ↓
+__v = 0
+     ↓
+Document updated
+     ↓
+__v = 1
+     ↓
+Document updated again
+     ↓
+__v = 2
+```
+
+So you can think of:
+
+```text
+__v = document version
+```
+
+But **don't interpret it as a universal "number of times this document has been updated" counter**. That's an important distinction.
+
+---
+
+# 2. Why is it called `__v`?
+
+It's simply the default name Mongoose uses for its **version key**.
+
+Mongoose's schema has an option called:
+
+```js
+versionKey
+```
+
+By default:
+
+```js
+versionKey: "__v"
+```
+
+So this:
+
+```js
+const userSchema = new mongoose.Schema({
+  name: String,
+  age: Number
+});
+```
+
+implicitly behaves roughly like:
+
+```js
+const userSchema = new mongoose.Schema(
+  {
+    name: String,
+    age: Number
+  },
+  {
+    versionKey: "__v"
+  }
+);
+```
+
+That's why you see `__v`.
+
+---
+
+# 3. Is `__v` stored inside MongoDB?
+
+Yes.
+
+This is important.
+
+Mongoose isn't displaying some imaginary property that exists only in your JavaScript object.
+
+It actually gets stored in the MongoDB document:
+
+```json
+{
+  "_id": "...",
+  "name": "Karma",
+  "age": 20,
+  "__v": 0
+}
+```
+
+If you open MongoDB Compass or query MongoDB directly, you can see it.
+
+For example:
+
+```js
+db.users.find()
+```
+
+might return:
+
+```js
+{
+  _id: ObjectId("..."),
+  name: "Karma",
+  age: 20,
+  __v: 0
+}
+```
+
+---
+
+# 4. The most important thing: `__v` is about VERSIONING
+
+Imagine two people are editing the same document.
+
+Suppose the database contains:
+
+```js
+{
+  _id: 1,
+  name: "Karma",
+  skills: ["Java", "MongoDB"],
+  __v: 0
+}
+```
+
+Now:
+
+```text
+           Database
+              │
+           __v = 0
+              │
+       ┌──────┴──────┐
+       ↓             ↓
+    User A         User B
+    reads it       reads it
+    __v = 0        __v = 0
+```
+
+Both users have an old copy.
+
+User A modifies it.
+
+The document can become:
+
+```js
+{
+  _id: 1,
+  name: "Karma",
+  skills: ["Java", "MongoDB", "React"],
+  __v: 1
+}
+```
+
+Now the database knows:
+
+```text
+Version 0 → Version 1
+```
+
+User B still has:
+
+```text
+__v = 0
+```
+
+So version information can help detect situations where someone is trying to modify an **older version** of a document.
+
+This is the basic idea behind **optimistic concurrency/versioning**.
+
+---
+
+# 5. But here's where people get confused
+
+You will often hear:
+
+> "`__v` increments every time you update a document."
+
+That's **not a reliable rule**.
+
+Don't memorize that.
+
+Instead remember:
+
+> **`__v` is Mongoose's version key, primarily used by Mongoose for document versioning/concurrency-related behavior.**
+
+Its behavior depends on **how the document is modified** and which Mongoose operations/options you're using.
+
+For example, certain operations such as:
+
+```js
+findOneAndUpdate()
+```
+
+do not necessarily behave like:
+
+```js
+document.save()
+```
+
+with respect to the version key.
+
+So don't build application logic around:
+
+```js
+__v === number of updates
+```
+
+because that is not what it means.
+
+---
+
+# 6. Why does Mongoose care about versions?
+
+Here's a useful real-world example.
+
+Suppose you have:
+
+```js
+{
+  _id: 1,
+  title: "Movie",
+  tags: ["action", "marvel"],
+  __v: 0
+}
+```
+
+Two requests retrieve the document:
+
+```text
+Request A ──→ document version 0
+Request B ──→ document version 0
+```
+
+Request A changes the tags:
+
+```text
+version 0 → version 1
+```
+
+Now Request B tries to save its old copy.
+
+It is working from:
+
+```text
+version 0
+```
+
+while the database is at:
+
+```text
+version 1
+```
+
+That's a **concurrency problem**.
+
+Versioning gives Mongoose a mechanism to reason about:
+
+> "Am I saving an older version of this document?"
+
+---
+
+# 7. `__v` and optimistic concurrency
+
+This is where the concept becomes really useful.
+
+Suppose:
+
+```js
+{
+  _id: 1,
+  name: "Karma",
+  age: 20,
+  __v: 3
+}
+```
+
+You fetch it:
+
+```js
+const user = await User.findById(1);
+```
+
+Your application now has:
+
+```js
+user.__v === 3
+```
+
+Someone else modifies the document first:
+
+```text
+Database:
+__v = 4
+```
+
+Then your old object still contains:
+
+```text
+__v = 3
+```
+
+If optimistic concurrency is configured, Mongoose can use the version information to prevent your stale document from silently overwriting newer changes.
+
+Conceptually:
+
+```text
+"Update this document ONLY IF version is still 3."
+```
+
+If the database is already at version 4:
+
+```text
+version 3 ≠ version 4
+       ↓
+stale document
+       ↓
+don't blindly overwrite
+```
+
+That's the real reason versioning exists.
+
+---
+
+# 8. `__v` is NOT `_id`
+
+These two are completely different.
+
+### `_id`
+
+```js
+_id: ObjectId("...")
+```
+
+Purpose:
+
+> **Uniquely identify the document.**
+
+### `__v`
+
+```js
+__v: 0
+```
+
+Purpose:
+
+> **Mongoose's version key.**
+
+Think:
+
+```text
+_id  → WHO is this document?
+__v  → WHICH VERSION of this document?
+```
+
+That's a good mental model.
+
+---
+
+# 9. `__v` is NOT a timestamp
+
+This:
+
+```js
+__v: 5
+```
+
+doesn't tell you:
+
+> "The document was modified 5 seconds ago."
+
+It doesn't tell you when the document was changed.
+
+If you want timestamps, use:
+
+```js
+const userSchema = new mongoose.Schema(
+  {
+    name: String
+  },
+  {
+    timestamps: true
+  }
+);
+```
+
+Then Mongoose adds:
+
+```js
+{
+  _id: ...,
+  name: "Karma",
+  createdAt: ISODate("..."),
+  updatedAt: ISODate("..."),
+  __v: 0
+}
+```
+
+Now:
+
+```text
+__v          → version information
+createdAt    → when created
+updatedAt    → when last updated
+```
+
+Completely different purposes.
+
+---
+
+# 10. Can I rename `__v`?
+
+Yes.
+
+Mongoose allows you to change the version key.
+
+For example:
+
+```js
+const userSchema = new mongoose.Schema(
+  {
+    name: String,
+    age: Number
+  },
+  {
+    versionKey: "version"
+  }
+);
+```
+
+Instead of:
+
+```js
+{
+  name: "Karma",
+  age: 20,
+  __v: 0
+}
+```
+
+you'll have:
+
+```js
+{
+  name: "Karma",
+  age: 20,
+  version: 0
+}
+```
+
+Because:
+
+```js
+versionKey: "version"
+```
+
+means:
+
+```text
+Mongoose's version key
+        ↓
+    "version"
+```
+
+---
+
+# 11. Can I disable `__v`?
+
+Yes.
+
+You can do:
+
+```js
+const userSchema = new mongoose.Schema(
+  {
+    name: String,
+    age: Number
+  },
+  {
+    versionKey: false
+  }
+);
+```
+
+Then Mongoose won't create `__v`.
+
+Your document becomes:
+
+```js
+{
+  _id: ObjectId("..."),
+  name: "Karma",
+  age: 20
+}
+```
+
+No:
+
+```js
+__v
+```
+
+---
+
+# 12. Should you disable it?
+
+**Usually, don't disable it without a reason.**
+
+For a normal Mongoose application:
+
+```js
+const userSchema = new mongoose.Schema({
+  name: String,
+  email: String
+});
+```
+
+just leave it alone.
+
+You don't need to manually manage:
+
+```js
+__v
+```
+
+Mongoose handles it.
+
+---
+
+# 13. Why do I sometimes see `__v: 0` forever?
+
+This is another common confusion.
+
+You might create:
+
+```js
+{
+  name: "Karma",
+  __v: 0
+}
+```
+
+Then update:
+
+```js
+user.name = "Rahul";
+await user.save();
+```
+
+and still see:
+
+```js
+{
+  name: "Rahul",
+  __v: 0
+}
+```
+
+That doesn't necessarily mean something is broken.
+
+The version key is **not a simple update counter**.
+
+Its behavior depends on the operations and versioning mechanisms involved.
+
+So:
+
+```text
+__v = 0
+```
+
+does **NOT** mean:
+
+> "This document has never been modified."
+
+That's a very important thing to remember.
+
+---
+
+# 14. What about `save()` vs `updateOne()`?
+
+This is where you should be careful.
+
+Mongoose has many different ways to modify documents:
+
+```js
+document.save()
+```
+
+```js
+Model.updateOne()
+```
+
+```js
+Model.updateMany()
+```
+
+```js
+Model.findOneAndUpdate()
+```
+
+```js
+Model.findByIdAndUpdate()
+```
+
+They don't all interact with versioning in exactly the same way.
+
+So don't think:
+
+```text
+ANY UPDATE
+   ↓
+__v++
+```
+
+That's too simplistic.
+
+Instead:
+
+```text
+Mongoose document versioning
+        ↓
+depends on Mongoose's operation/versioning behavior
+```
+
+---
+
+# 15. What is `__v` actually useful for in modern applications?
+
+One of the biggest practical uses is **concurrency control**.
+
+Imagine an e-commerce product:
+
+```js
+{
+  _id: 101,
+  name: "PS5",
+  stock: 1,
+  __v: 7
+}
+```
+
+Two users attempt to modify it around the same time.
+
+Without some concurrency strategy, you can get:
+
+```text
+User A reads stock = 1
+User B reads stock = 1
+
+User A → buys it
+User B → buys it
+
+💥 Problem
+```
+
+Versioning/concurrency control can help prevent stale document writes from overwriting newer state.
+
+However, don't confuse this with the database-level atomic operations you should use for things like stock decrementing. For those, MongoDB's atomic update operators and proper query conditions are often the more direct solution.
+
+---
+
+# 16. `__v` isn't something you normally send from frontend
+
+Suppose your frontend sends:
+
+```json
+{
+  "name": "Karma",
+  "age": 21
+}
+```
+
+You generally don't need:
+
+```json
+{
+  "name": "Karma",
+  "age": 21,
+  "__v": 5
+}
+```
+
+Mongoose manages the version key.
+
+So don't think of `__v` as a normal business field like:
+
+```js
+name
+email
+age
+price
+```
+
+It's an **internal Mongoose metadata field**.
+
+---
+
+# 17. A very important distinction: MongoDB vs Mongoose
+
+This is probably the most important thing from this entire explanation.
+
+### MongoDB
+
+MongoDB itself knows nothing special about:
+
+```js
+__v
+```
+
+To MongoDB, this is simply another field:
+
+```js
+{
+  name: "Karma",
+  __v: 0
+}
+```
+
+MongoDB doesn't say:
+
+> "Ah yes, this is Mongoose's version field."
+
+No.
+
+### Mongoose
+
+Mongoose says:
+
+> "I'm going to use a field called `__v` as my version key."
+
+Therefore:
+
+```text
+MongoDB
+   ↓
+stores arbitrary fields
+
+Mongoose
+   ↓
+adds meaning to __v
+```
+
+This is exactly like any other ODM-managed field.
+
+---
+
+# 18. Why does Mongoose use two underscores?
+
+There's no magical MongoDB meaning behind:
+
+```js
+__v
+```
+
+The underscores are simply part of Mongoose's chosen default field name.
+
+Don't think:
+
+```text
+__v = special MongoDB syntax
+```
+
+It isn't.
+
+It's just:
+
+```text
+Mongoose's default versionKey name
+```
+
+---
+
+# 19. Compare the important fields
+
+Here's the easiest way to keep everything straight:
+
+| Field       | Created by                 | Purpose                    |
+| ----------- | -------------------------- | -------------------------- |
+| `_id`       | MongoDB                    | Unique document identifier |
+| `__v`       | Mongoose                   | Version key                |
+| `createdAt` | Mongoose with `timestamps` | Creation time              |
+| `updatedAt` | Mongoose with `timestamps` | Last update time           |
+
+So if you see:
+
+```js
+{
+  _id: "...",
+  name: "Karma",
+  __v: 3,
+  createdAt: "...",
+  updatedAt: "..."
+}
+```
+
+read it as:
+
+```text
+_id
+ ↓
+Which document?
+
+__v
+ ↓
+Which Mongoose version?
+
+createdAt
+ ↓
+When was it created?
+
+updatedAt
+ ↓
+When was it last updated?
+```
+
+---
+
+# 20. The mental model I want you to remember
+
+Don't memorize a giant definition.
+
+Remember this story:
+
+Imagine you have a **Google Doc**.
+
+The document starts as:
+
+```text
+Document
+Version 0
+```
+
+Someone edits it:
+
+```text
+Version 1
+```
+
+Someone edits it again:
+
+```text
+Version 2
+```
+
+Another person has an old copy:
+
+```text
+"I have Version 1."
+```
+
+But the real document is:
+
+```text
+Version 2
+```
+
+Now the system can say:
+
+> "Hold on. You're trying to save an old version."
+
+That's the basic idea behind **versioning**.
+
+Mongoose represents that version information using:
+
+```text
+__v
+```
+
+---
+
+# 🧠 The one sentence to never forget
+
+> **`__v` is Mongoose's default version key stored in a MongoDB document; it helps Mongoose track document versions and handle certain concurrency/versioning situations—it is NOT a MongoDB field, not an update counter, not a timestamp, and not the document ID.**
+
+And if you remember only one diagram, remember:
+
+```text
+                 MongoDB document
+                       │
+        ┌──────────────┼──────────────┐
+        ↓              ↓              ↓
+      _id             __v          updatedAt
+        │              │              │
+   identity        Mongoose        timestamp
+                   version
+                     key
+```
+
+That should eliminate almost every common `__v` doubt you'll encounter with Mongoose.

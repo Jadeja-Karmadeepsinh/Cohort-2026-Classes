@@ -1,0 +1,4 @@
+issuer
+authorization_endpoint
+userinfo_endpoint
+jwks_uri
