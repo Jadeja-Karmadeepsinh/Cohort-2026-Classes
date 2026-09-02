@@ -1,262 +1,1593 @@
-12. Your project structure could look like this
+Bro, **yes — let's reset this completely**. You're trying to understand OIDC/OAuth while simultaneously wiring routes, login pages, JWTs, JWKS, clients, redirect URIs, etc. That's why it feels like a fucking mess.
 
-I'd eventually structure it something like:
+The key thing you were missing is:
 
+> **`client_id` and `redirect_uri` do NOT come from nowhere. The client application gets them when it registers itself with your Authorization Server.**
+
+That's the actual OAuth/OIDC architecture. OAuth 2.0's authorization-code flow explicitly expects the client to be registered and its redirect URI validated against the registered value. ([RFC Editor][1])
+
+Let's build a **proper OIDC Provider + OAuth 2.0 Authorization Server** around that concept.
+
+---
+
+# 1. First understand what we're actually building
+
+You have:
+
+```text
+                YOUR SERVER
+          ┌─────────────────────┐
+          │ Authorization Server│
+          │                     │
+          │ OAuth 2.0           │
+          │ OpenID Connect      │
+          │                     │
+          │ /authorize          │
+          │ /token              │
+          │ /userinfo           │
+          │ /.well-known/...    │
+          └──────────┬──────────┘
+                     │
+             user authenticates
+                     │
+          ┌──────────▼──────────┐
+          │      User DB        │
+          └─────────────────────┘
+
+
+       CLIENT APPLICATION
+       ┌──────────────────┐
+       │ SportsIN frontend│
+       │                  │
+       │ client_id        │
+       │ redirect_uri     │
+       └──────────────────┘
+```
+
+The client could be:
+
+```text
+SportsIN
+```
+
+or:
+
+```text
+another-app
+```
+
+or:
+
+```text
+mobile-app
+```
+
+Your authorization server doesn't hardcode these.
+
+Instead, you have a **Client collection** in MongoDB.
+
+---
+
+# 2. What is a client?
+
+Suppose your SportsIN application wants users to log in using your OIDC server.
+
+You register SportsIN:
+
+```json
+{
+    "name": "SportsIN",
+    "client_id": "sportsin_web_abc123",
+    "client_secret": "some-secret",
+    "redirect_uris": [
+        "http://localhost:3000/auth/callback"
+    ]
+}
+```
+
+Now your OIDC server knows:
+
+> `sportsin_web_abc123` is allowed to redirect to `http://localhost:3000/auth/callback`.
+
+That's where these values come from.
+
+The OAuth specification requires the authorization server to validate redirect URIs against registered values. ([RFC Editor][1])
+
+---
+
+# 3. The complete flow
+
+This is the thing you should memorize.
+
+```text
+                SPORTSIN
+                    │
+                    │
+                    │ 1. "I want login"
+                    ▼
+        GET /o/authorize
+        ?client_id=sportsin_web_abc123
+        &redirect_uri=http://localhost:3000/auth/callback
+        &response_type=code
+        &scope=openid profile email
+        &state=xyz
+                    │
+                    ▼
+             YOUR OIDC SERVER
+                    │
+                    │
+              Is client valid?
+              Is redirect valid?
+                    │
+                    ▼
+              Login page
+                    │
+                    ▼
+              User logs in
+                    │
+                    ▼
+             Generate CODE
+                    │
+                    ▼
+        redirect_uri?code=ABC
+                    │
+                    ▼
+                SPORTSIN
+                    │
+                    │ POST /o/token
+                    │ code=ABC
+                    ▼
+             YOUR OIDC SERVER
+                    │
+                    │ validate code
+                    │ validate client
+                    │
+                    ▼
+          access_token + id_token
+                    │
+                    ▼
+                SPORTSIN
+                    │
+                    │ GET /o/userinfo
+                    │ Authorization: Bearer ...
+                    ▼
+             YOUR OIDC SERVER
+                    │
+                    ▼
+               User info
+```
+
+This is the standard Authorization Code flow. OIDC adds the **ID Token** on top of OAuth's authorization/access-token mechanism. ([OpenID Foundation][2])
+
+---
+
+# 4. The most important distinction
+
+## OAuth 2.0
+
+OAuth answers:
+
+> "Can this application access this user's resources?"
+
+You get:
+
+```text
+access_token
+```
+
+## OpenID Connect
+
+OIDC answers:
+
+> "Who is this user?"
+
+You get:
+
+```text
+id_token
+```
+
+So:
+
+```text
+OAuth 2.0
+    ↓
+Access Token
+    ↓
+Authorization
+
+OIDC
+    ↓
+ID Token
+    ↓
+Authentication / Identity
+```
+
+OIDC Authorization Code flow returns an authorization code first, which is exchanged at the token endpoint for an ID token and access token. ([OpenID Foundation][2])
+
+---
+
+# 5. Let's build it
+
+I'm going to use:
+
+```text
+Express
+MongoDB
+Mongoose
+jose
+cookie-parser
+```
+
+Install:
+
+```bash
+npm install jose mongoose cookie-parser express
+```
+
+I recommend using the modern `jose` package instead of building new code around `node-jose`.
+
+---
+
+# 6. Folder structure
+
+I'd structure your project like this:
+
+```text
 src/
 │
-├── config/
-│ ├── env.js
-│ └── db.js
-│
 ├── modules/
-│ │
-│ ├── auth/
-│ │ ├── auth.model.js
-│ │ ├── auth.controller.js
-│ │ ├── auth.service.js
-│ │ ├── auth.repository.js
-│ │ ├── auth.routes.js
-│ │ └── auth.middleware.js
-│ │
-│ └── ipl/
-│ │
-│ ├── teams/
-│ │ ├── team.model.js
-│ │ ├── team.controller.js
-│ │ ├── team.service.js
-│ │ ├── team.repository.js
-│ │ └── team.routes.js
-│ │
-│ ├── players/
-│ │ ├── player.model.js
-│ │ ├── player.controller.js
-│ │ ├── player.service.js
-│ │ ├── player.repository.js
-│ │ └── player.routes.js
-│ │
-│ ├── matches/
-│ ├── venues/
-│ └── seasons/
+│   │
+│   └── oidc/
+│       ├── oidc.routes.js
+│       ├── oidc.controller.js
+│       ├── oidc.service.js
+│       │
+│       └── models/
+│           ├── client.model.js
+│           └── authorization-code.model.js
 │
-├── middleware/
-│ ├── authenticate.js
-│ ├── authorize.js
-│ └── error.js
-│
-├── utils/
+├── common/
+│   ├── config/
+│   │   └── env.js
+│   │
+│   └── utils/
+│       └── oidc-keys.js
 │
 └── app.js
+```
 
-You don't have to start this complicated. Add the structure as the project grows.
+---
 
-13. The beautiful part: Auth and IPL remain independent
+# 7. Client model
 
-Imagine your authentication module knows:
+This is the piece you're currently missing.
 
-{
-userId: "123",
-role: "admin"
-}
+```js
+import mongoose from "mongoose";
 
-That's basically all the IPL module needs.
+const clientSchema = new mongoose.Schema(
+    {
+        name: {
+            type: String,
+            required: true,
+            trim: true
+        },
 
-It doesn't care whether the user authenticated using:
+        clientId: {
+            type: String,
+            required: true,
+            unique: true,
+            index: true
+        },
 
-email/password
+        clientSecretHash: {
+            type: String,
+            required: true
+        },
 
-or later:
+        redirectUris: {
+            type: [String],
+            required: true
+        },
 
-Google OAuth
+        allowedScopes: {
+            type: [String],
+            default: ["openid", "profile", "email"]
+        },
 
-or:
+        grantTypes: {
+            type: [String],
+            default: ["authorization_code"]
+        },
 
-GitHub OAuth
+        responseTypes: {
+            type: [String],
+            default: ["code"]
+        }
+    },
+    {
+        timestamps: true
+    }
+);
 
-The Auth module says:
+export const Client = mongoose.model("Client", clientSchema);
+```
 
-"This is user 123 and they're an admin."
+Now your database can contain:
 
-The IPL module says:
+```text
+Client
+────────────────────────────
+name: SportsIN
 
-"Admins can modify IPL data."
+clientId:
+sportsin_8f72...
 
-That's separation of concerns.
+clientSecretHash:
+...
 
-14. And this project will teach you a LOT of MongoDB
+redirectUris:
+[
+    "http://localhost:3000/auth/callback"
+]
 
-This project is actually perfect for the MongoDB concepts you've been learning recently.
+allowedScopes:
+[
+    "openid",
+    "profile",
+    "email"
+]
+```
 
-You'll encounter:
+---
 
-References
-Player → Team
-Match → Team
-Match → Venue
-Match → Season
-populate()
+# 8. Authorization code model
 
-For example:
+Never immediately give the client an access token after login.
 
-Player.find().populate("team");
+First generate a short-lived authorization code.
 
-So instead of receiving only:
+```js
+import mongoose from "mongoose";
 
-{
-"name": "MS Dhoni",
-"team": "67abc..."
-}
+const authorizationCodeSchema = new mongoose.Schema(
+    {
+        codeHash: {
+            type: String,
+            required: true,
+            unique: true
+        },
 
-you can retrieve the team information too.
+        clientId: {
+            type: String,
+            required: true,
+            index: true
+        },
 
-Projection
+        userId: {
+            type: mongoose.Schema.Types.ObjectId,
+            required: true
+        },
 
-You might have:
+        redirectUri: {
+            type: String,
+            required: true
+        },
 
-Player.find()
-.select("name role team");
+        scope: {
+            type: String,
+            required: true
+        },
 
-instead of returning every field.
+        nonce: {
+            type: String
+        },
 
-Aggregation
+        codeChallenge: {
+            type: String
+        },
 
-This project will give you real reasons to use aggregation.
+        codeChallengeMethod: {
+            type: String
+        },
 
-For example:
+        expiresAt: {
+            type: Date,
+            required: true
+        },
 
-"Show the top 10 run scorers."
+        used: {
+            type: Boolean,
+            default: false
+        }
+    },
+    {
+        timestamps: true
+    }
+);
 
-or:
+export const AuthorizationCode =
+    mongoose.model("AuthorizationCode", authorizationCodeSchema);
+```
 
-"How many matches has each team won?"
+Notice this:
 
-or:
+```js
+used: false
+```
 
-"Calculate a player's total runs across all matches."
+Authorization codes are **single-use**. The OAuth specification requires that an authorization code not be reused. ([RFC Editor][1])
 
-or:
+---
 
-"Show the points table."
+# 9. Generate your RSA keys
 
-Now aggregation isn't just some MongoDB syntax you're memorizing — you have an actual reason to use it.
+You already did this part.
 
-15. I'd build the project in stages
+You want:
 
-Don't start by creating 15 models.
-
-Phase 1 — Authentication
-
-Build:
-
-Register
-Login
-Logout
-JWT
-Password hashing
-Authentication middleware
-Role
-Authorization middleware
-
-Get this working first.
-
-Phase 2 — Teams
-Create team ADMIN
-Get teams USER + ADMIN
-Get team USER + ADMIN
-Update team ADMIN
-Delete team ADMIN
-Phase 3 — Players
+```text
+cert/
+├── private-key.pem
+└── public-key.pem
+```
 
 Then:
 
-Create player
-Get players
-Get player
-Update player
-Delete player
+```js
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-And establish:
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-Player → Team
-Phase 4 — Venues
-Create venue
-Get venues
-Update venue
-Delete venue
-Phase 5 — Seasons
-2024
-2025
-2026
-...
-Phase 6 — Matches
+export const PRIVATE_KEY = fs.readFileSync(
+    path.join(__dirname, "../../../cert/private-key.pem"),
+    "utf8"
+);
 
-Now connect everything:
+export const PUBLIC_KEY = fs.readFileSync(
+    path.join(__dirname, "../../../cert/public-key.pem"),
+    "utf8"
+);
+```
 
-Match
-├── Team
-├── Team
-├── Venue
-└── Season
-Phase 7 — Statistics
+---
 
-This is where you start heavily using:
+# 10. OIDC discovery
 
-Aggregation
-$group
-$sum
-$avg
-$sort
-$lookup
-$unwind
-$project
-$match
+This endpoint:
 
-And you'll actually understand why you're using them.
+```text
+/.well-known/openid-configuration
+```
 
-16. Eventually your API could look really nice
+tells clients:
 
-Something like:
+> "Here are all the endpoints of my OIDC server."
 
-/api/auth
-POST /register
-POST /login
-POST /logout
+```js
+app.get("/.well-known/openid-configuration", (req, res) => {
 
-/api/teams
-GET /
-GET /:id
-POST /
-PATCH /:id
-DELETE /:id
+    const issuer = `http://localhost:${env.PORT}`;
 
-/api/players
-GET /
-GET /:id
-POST /
-PATCH /:id
-DELETE /:id
+    res.json({
+        issuer,
 
-/api/venues
-GET /
-GET /:id
-POST /
-PATCH /:id
-DELETE /:id
+        authorization_endpoint:
+            `${issuer}/o/authorize`,
 
-/api/seasons
-GET /
-GET /:id
+        token_endpoint:
+            `${issuer}/o/token`,
 
-/api/matches
-GET /
-GET /:id
-POST /
-PATCH /:id
-DELETE /:id
+        userinfo_endpoint:
+            `${issuer}/o/userinfo`,
 
-/api/stats
-GET /players/top-scorers
-GET /players/top-wicket-takers
-GET /teams/:id
-GET /points-table
+        jwks_uri:
+            `${issuer}/.well-known/jwks.json`,
 
-And authorization determines which of those operations a user can perform.
+        response_types_supported: [
+            "code"
+        ],
+
+        grant_types_supported: [
+            "authorization_code"
+        ],
+
+        subject_types_supported: [
+            "public"
+        ],
+
+        id_token_signing_alg_values_supported: [
+            "RS256"
+        ],
+
+        scopes_supported: [
+            "openid",
+            "profile",
+            "email"
+        ],
+
+        token_endpoint_auth_methods_supported: [
+            "client_secret_basic",
+            "client_secret_post"
+        ],
+
+        claims_supported: [
+            "sub",
+            "name",
+            "email",
+            "email_verified"
+        ]
+    });
+});
+```
+
+This is what makes your server discoverable as an OIDC provider.
+
+---
+
+# 11. JWKS
+
+Your previous code:
+
+```js
+app.get('/.well-known/jwks.json', async (_, res) => {
+    const key = await jose.JWK.asKey(PUBLIC_KEY, "pem");
+    return res.json({ keys: [key.toJSON()] });
+});
+```
+
+is basically doing:
+
+```text
+private key
+     │
+     │ signs ID token
+     ▼
+
+     JWT
+
+client
+     │
+     │ needs public key
+     ▼
+
+GET /.well-known/jwks.json
+     │
+     ▼
+
+public key
+     │
+     ▼
+verify ID token
+```
+
+With modern `jose`, we'd expose the public JWK there.
+
+---
+
+# 12. Client registration
+
+This is where your:
+
+```text
+client_id
+client_secret
+redirect_uri
+```
+
+actually come from.
+
+For your project, you can initially have an admin-only registration endpoint.
+
+For example:
+
+```http
+POST /o/clients
+```
+
+Body:
+
+```json
+{
+    "name": "SportsIN",
+    "redirectUris": [
+        "http://localhost:3000/auth/callback"
+    ]
+}
+```
+
+Server generates:
+
+```text
+client_id
+client_secret
+```
+
+For example:
+
+```text
+client_id:
+
+cli_7f4c9d2a...
+
+
+client_secret:
+
+sec_92f8c1...
+```
+
+**The client stores those.**
+
+Your authorization server stores the secret securely (preferably hashed).
+
+---
+
+# 13. Then the client constructs this URL
+
+This is where everything finally clicks.
+
+SportsIN has:
+
+```js
+const clientId = "cli_7f4c9d2a...";
+const redirectUri =
+    "http://localhost:3000/auth/callback";
+```
+
+It generates:
+
+```js
+const params = new URLSearchParams({
+    response_type: "code",
+
+    client_id: clientId,
+
+    redirect_uri: redirectUri,
+
+    scope: "openid profile email",
+
+    state: crypto.randomUUID(),
+
+    nonce: crypto.randomUUID()
+});
+
+window.location.href =
+    `http://localhost:9000/o/authorize?${params}`;
+```
+
+So the browser goes to:
+
+```text
+http://localhost:9000/o/authorize
+    ?response_type=code
+    &client_id=cli_7f4c9d2a
+    &redirect_uri=http://localhost:3000/auth/callback
+    &scope=openid%20profile%20email
+    &state=xyz
+    &nonce=abc
+```
+
+**THAT is where your login page gets the `client_id` and `redirect_uri`.**
+
+The client generated the authorization request.
+
+This is exactly how the OAuth authorization request is constructed. ([RFC Editor][1])
+
+---
+
+# 14. `/o/authorize`
+
+Your authorization endpoint receives:
+
+```js
+app.get("/o/authorize", async (req, res) => {
+
+    const {
+        client_id,
+        redirect_uri,
+        response_type,
+        scope,
+        state,
+        nonce,
+        code_challenge,
+        code_challenge_method
+    } = req.query;
+
+    if (response_type !== "code") {
+        return res.status(400).json({
+            error: "unsupported_response_type"
+        });
+    }
+
+    const client = await Client.findOne({
+        clientId: client_id
+    });
+
+    if (!client) {
+        return res.status(400).json({
+            error: "invalid_client"
+        });
+    }
+
+    if (!client.redirectUris.includes(redirect_uri)) {
+        return res.status(400).json({
+            error: "invalid_redirect_uri"
+        });
+    }
+
+    const requestedScopes =
+        scope?.split(" ") ?? [];
+
+    for (const requestedScope of requestedScopes) {
+
+        if (!client.allowedScopes.includes(requestedScope)) {
+
+            return res.status(400).json({
+                error: "invalid_scope"
+            });
+
+        }
+    }
+
+    // Store the authorization request temporarily
+    // so login can resume after authentication.
+
+    const params = new URLSearchParams({
+        client_id,
+        redirect_uri,
+        response_type,
+        scope,
+        state: state ?? "",
+        nonce: nonce ?? "",
+        ...(code_challenge
+            ? { code_challenge }
+            : {}),
+        ...(code_challenge_method
+            ? { code_challenge_method }
+            : {})
+    });
+
+    return res.redirect(
+        `/o/authenticate?${params.toString()}`
+    );
+});
+```
+
+Notice the important security check:
+
+```js
+client.redirectUris.includes(redirect_uri)
+```
+
+You **never** blindly trust:
+
+```text
+redirect_uri
+```
+
+from the browser.
+
+---
+
+# 15. Login page
+
+Your login page can now read:
+
+```js
+const params =
+    new URLSearchParams(window.location.search);
+```
+
+and get:
+
+```js
+const clientId =
+    params.get("client_id");
+
+const redirectUri =
+    params.get("redirect_uri");
+```
+
+Then when login succeeds:
+
+```js
+fetch("/o/authenticate/sign-in", {
+    method: "POST",
+
+    headers: {
+        "Content-Type": "application/json"
+    },
+
+    body: JSON.stringify({
+        email,
+        password,
+
+        client_id:
+            params.get("client_id"),
+
+        redirect_uri:
+            params.get("redirect_uri"),
+
+        state:
+            params.get("state"),
+
+        nonce:
+            params.get("nonce")
+    })
+});
+```
+
+So your original login page idea was actually **not wrong**.
+
+You were just missing where the parameters originated.
+
+---
+
+# 16. After successful login
+
+Suppose user:
+
+```text
+Karmadeepsinh
+```
+
+successfully logs in.
+
+Your server now knows:
+
+```text
+user_id
+client_id
+redirect_uri
+scope
+state
+nonce
+```
+
+Generate a random authorization code:
+
+```js
+import crypto from "node:crypto";
+
+const code =
+    crypto.randomBytes(32).toString("hex");
+```
+
+Don't store the raw code.
+
+Hash it:
+
+```js
+const codeHash =
+    crypto
+        .createHash("sha256")
+        .update(code)
+        .digest("hex");
+```
+
+Store:
+
+```js
+await AuthorizationCode.create({
+    codeHash,
+
+    clientId,
+
+    userId: user._id,
+
+    redirectUri,
+
+    scope,
+
+    nonce,
+
+    expiresAt:
+        new Date(Date.now() + 5 * 60 * 1000)
+});
+```
+
+Then:
+
+```js
+const callback =
+    new URL(redirectUri);
+
+callback.searchParams.set(
+    "code",
+    code
+);
+
+if (state) {
+    callback.searchParams.set(
+        "state",
+        state
+    );
+}
+
+return res.redirect(callback.toString());
+```
+
+The browser ends up at:
+
+```text
+http://localhost:3000/auth/callback
+    ?code=abc123
+    &state=xyz
+```
+
+---
+
+# 17. Why don't we send the access token directly?
+
+Because that's the whole point of the authorization-code flow.
+
+Instead:
+
+```text
+Browser
+   ↓
+authorization code
+   ↓
+Client backend
+   ↓
+token endpoint
+   ↓
+access token + ID token
+```
+
+The authorization code is short-lived and single-use. ([RFC Editor][1])
+
+---
+
+# 18. Client calls `/o/token`
+
+SportsIN receives:
+
+```text
+code=abc123
+```
+
+and sends:
+
+```http
+POST /o/token
+```
+
+with:
+
+```json
+{
+    "grant_type": "authorization_code",
+    "code": "abc123",
+    "client_id": "cli_7f4c9d2a",
+    "client_secret": "secret",
+    "redirect_uri": "http://localhost:3000/auth/callback"
+}
+```
+
+Your server:
+
+```js
+app.post("/o/token", async (req, res) => {
+
+    const {
+        grant_type,
+        code,
+        client_id,
+        client_secret,
+        redirect_uri
+    } = req.body;
+
+    if (grant_type !== "authorization_code") {
+        return res.status(400).json({
+            error: "unsupported_grant_type"
+        });
+    }
+
+    const client = await findAndValidateClient(
+        client_id,
+        client_secret
+    );
+
+    if (!client) {
+        return res.status(401).json({
+            error: "invalid_client"
+        });
+    }
+
+    const codeHash =
+        crypto
+            .createHash("sha256")
+            .update(code)
+            .digest("hex");
+
+    const authorizationCode =
+        await AuthorizationCode.findOne({
+            codeHash,
+            clientId: client_id
+        });
+
+    if (!authorizationCode) {
+        return res.status(400).json({
+            error: "invalid_grant"
+        });
+    }
+
+    if (authorizationCode.used) {
+        return res.status(400).json({
+            error: "invalid_grant"
+        });
+    }
+
+    if (
+        authorizationCode.expiresAt <
+        new Date()
+    ) {
+        return res.status(400).json({
+            error: "invalid_grant"
+        });
+    }
+
+    if (
+        authorizationCode.redirectUri !==
+        redirect_uri
+    ) {
+        return res.status(400).json({
+            error: "invalid_grant"
+        });
+    }
+
+    authorizationCode.used = true;
+
+    await authorizationCode.save();
+
+    // Now generate tokens
+});
+```
+
+Again, notice:
+
+```js
+authorizationCode.redirectUri === redirect_uri
+```
+
+The redirect URI used during authorization must match the one used during token exchange. ([RFC Editor][1])
+
+---
+
+# 19. Generate access token
+
+Now generate an OAuth access token.
+
+For example:
+
+```js
+const accessToken = await new jose.SignJWT({
+    scope: authorizationCode.scope
+})
+    .setProtectedHeader({
+        alg: "RS256",
+        typ: "JWT"
+    })
+    .setIssuer(ISSUER)
+    .setAudience("sports-api")
+    .setSubject(
+        authorizationCode.userId.toString()
+    )
+    .setIssuedAt()
+    .setExpirationTime("15m")
+    .sign(privateKey);
+```
+
+Response:
+
+```json
+{
+    "access_token": "...",
+    "token_type": "Bearer",
+    "expires_in": 900,
+    "scope": "openid profile email"
+}
+```
+
+---
+
+# 20. Generate the OIDC ID token
+
+This is the part OAuth itself doesn't provide.
+
+```js
+const idToken = await new jose.SignJWT({
+    sub: user._id.toString(),
+
+    email: user.email,
+
+    name:
+        `${user.firstName} ${user.lastName}`,
+
+    email_verified: true,
+
+    nonce:
+        authorizationCode.nonce
+})
+    .setProtectedHeader({
+        alg: "RS256",
+        typ: "JWT"
+    })
+    .setIssuer(ISSUER)
+    .setAudience(client_id)
+    .setIssuedAt()
+    .setExpirationTime("10m")
+    .sign(privateKey);
+```
+
+Then:
+
+```js
+return res.json({
+    access_token: accessToken,
+
+    token_type: "Bearer",
+
+    expires_in: 900,
+
+    id_token: idToken
+});
+```
+
+That's the **OIDC part**.
+
+---
+
+# 21. `/o/userinfo`
+
+Now the client has an access token.
+
+It calls:
+
+```http
+GET /o/userinfo
+Authorization: Bearer ACCESS_TOKEN
+```
+
+Your server:
+
+```js
+app.get("/o/userinfo", async (req, res) => {
+
+    const auth =
+        req.headers.authorization;
+
+    if (!auth?.startsWith("Bearer ")) {
+        return res.status(401).json({
+            error: "invalid_token"
+        });
+    }
+
+    const token =
+        auth.substring(7);
+
+    const payload =
+        await verifyAccessToken(token);
+
+    const user =
+        await User.findById(payload.sub);
+
+    if (!user) {
+        return res.status(401).json({
+            error: "invalid_token"
+        });
+    }
+
+    return res.json({
+        sub: user._id.toString(),
+
+        name:
+            `${user.firstName} ${user.lastName}`,
+
+        email: user.email,
+
+        email_verified: true
+    });
+});
+```
+
+Now your client can obtain the user's identity.
+
+---
+
+# 22. Where PKCE fits
+
+For a **real modern implementation**, I strongly recommend adding PKCE.
+
+The flow becomes:
+
+```text
+Client generates:
+
+code_verifier
+      ↓
+SHA256
+      ↓
+code_challenge
+```
+
+Authorization request:
+
+```text
+/authorize
+
+client_id=...
+redirect_uri=...
+response_type=code
+
+code_challenge=...
+code_challenge_method=S256
+```
+
+Server stores:
+
+```text
+code_challenge
+```
+
+with authorization code.
+
+Then at `/token`, client sends:
+
+```text
+code_verifier
+```
+
+Server calculates:
+
+```text
+SHA256(code_verifier)
+```
+
+and compares:
+
+```text
+calculated challenge
+        ==
+stored challenge
+```
+
+Only then does it issue tokens.
+
+This prevents someone who steals the authorization code from simply exchanging it.
+
+---
+
+# 23. Your final database will look roughly like this
+
+### Users
+
+You already have this.
+
+```text
+users
+├── _id
+├── email
+├── password
+├── firstName
+└── lastName
+```
+
+### OAuth Clients
+
+```text
+oauth_clients
+├── _id
+├── name
+├── clientId
+├── clientSecretHash
+├── redirectUris
+├── allowedScopes
+├── grantTypes
+└── responseTypes
+```
+
+### Authorization Codes
+
+```text
+authorization_codes
+├── _id
+├── codeHash
+├── clientId
+├── userId
+├── redirectUri
+├── scope
+├── nonce
+├── codeChallenge
+├── codeChallengeMethod
+├── expiresAt
+└── used
+```
+
+Later you can add:
+
+```text
+refresh_tokens
+consents
+sessions
+```
+
+---
+
+# 24. And THIS is the part you were struggling with
+
+You were thinking:
+
+> "Where the fuck do I get client_id from?"
+
+It's not something your login page invents.
+
+It's:
+
+```text
+            ADMIN / CLIENT REGISTRATION
+                     │
+                     ▼
+             Register application
+                     │
+                     ▼
+              OAuth Client DB
+                     │
+          ┌──────────┴──────────┐
+          ▼                     ▼
+     client_id            client_secret
+          │
+          │
+          ▼
+       CLIENT
+          │
+          │ constructs authorization URL
+          ▼
+   /o/authorize
+          │
+          │ client_id
+          │ redirect_uri
+          ▼
+      OIDC SERVER
+```
+
+And:
+
+```text
+redirect_uri
+```
+
+is supplied by the **client application during registration**.
+
+For example:
+
+```text
+SportsIN
+
+client_id:
+cli_sportsin_123
+
+redirect_uri:
+http://localhost:3000/auth/callback
+```
+
+Then every authorization request uses that registered information.
+
+---
+
+# 25. Your current architecture should therefore change
+
+Right now you have something like:
+
+```text
+/o/authenticate
+/o/authenticate/sign-in
+/o/authenticate/sign-up
+/o/userinfo
+/o/tokeninfo
+```
+
+I'd change it toward:
+
+```text
+/.well-known/openid-configuration
+
+/.well-known/jwks.json
+
+/o/authorize
+
+/o/authenticate
+/o/authenticate/sign-in
+/o/authenticate/sign-up
+
+/o/token
+
+/o/userinfo
+
+/o/clients
+```
+
+And conceptually:
+
+```text
+                OAuth/OIDC SERVER
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+        ▼              ▼              ▼
+   /authorize       /token        /userinfo
+        │              │              │
+        ▼              ▼              ▼
+      LOGIN        JWT TOKENS      USER DATA
+        │
+        ▼
+      User DB
+```
+
+---
+
+# 26. Don't try to code everything at once
+
+This is **the exact order I'd implement it**:
+
+### Phase 1 — Client registration
+
+Get this working:
+
+```text
+POST /o/clients
+       ↓
+client_id
+client_secret
+redirect_uri
+       ↓
+MongoDB
+```
+
+### Phase 2 — Authorization endpoint
+
+Get:
+
+```text
+GET /o/authorize
+```
+
+working.
+
+Validate:
+
+```text
+client_id
+redirect_uri
+response_type
+scope
+```
+
+Then redirect to login.
+
+### Phase 3 — Login
+
+Your existing login page handles:
+
+```text
+email
+password
+```
+
+Then authorization server creates:
+
+```text
+authorization_code
+```
+
+and redirects:
+
+```text
+client/callback?code=...
+```
+
+### Phase 4 — Token endpoint
+
+Implement:
+
+```text
+POST /o/token
+```
+
+and exchange:
+
+```text
+code
+   ↓
+access_token
+id_token
+```
+
+### Phase 5 — UserInfo
+
+Implement:
+
+```text
+GET /o/userinfo
+```
+
+### Phase 6 — JWKS
+
+Client verifies:
+
+```text
+ID Token
+   ↓
+JWKS
+   ↓
+public key
+```
+
+### Phase 7 — PKCE
+
+Then add:
+
+```text
+code_challenge
+code_verifier
+```
+
+---
+
+## The one mental model I want you to keep
+
+Don't think:
+
+```text
+"OIDC is some complicated JWT login thing."
+```
+
+Think:
+
+```text
+CLIENT
+   │
+   │ "I want this user to log in"
+   ▼
+AUTHORIZE
+   │
+   │ user logs in
+   ▼
+AUTHORIZATION CODE
+   │
+   │ client exchanges it
+   ▼
+TOKEN
+   │
+   ├───────────────┐
+   ▼               ▼
+ACCESS TOKEN     ID TOKEN
+   │               │
+   │               │
+OAuth             OIDC
+authorization     identity
+```
+
+And the missing piece that caused all your confusion is:
+
+```text
+CLIENT REGISTRATION
+       │
+       ├── client_id
+       ├── client_secret
+       └── redirect_uri
+```
+
+**That is where `client_id` and `redirect_uri` come from.**
+
+That's also why you should **not hardcode them into your OIDC server**. You store registered clients and validate every authorization request against that registration. That's the real approach described by OAuth/OIDC. ([RFC Editor][1])
+
+If you're building this as a learning project, I'd implement **Authorization Code + PKCE + OIDC ID Token** rather than trying to reproduce every possible OAuth grant. That gives you the core architecture used by modern web applications without dragging you into obsolete flows.
+
+[1]: https://www.rfc-editor.org/info/rfc6749/?utm_source=chatgpt.com "RFC 6749: The OAuth 2.0 Authorization Framework | RFC Editor"
+[2]: https://openid.net/specs/openid-connect-core-1_0-18.html?utm_source=chatgpt.com "Final: OpenID Connect Core 1.0"
