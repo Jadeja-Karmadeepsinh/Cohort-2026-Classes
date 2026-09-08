@@ -1,0 +1,1674 @@
+Bhai, **your understanding is actually pretty damn good for someone who says they barely remember OAuth/OIDC.** 😭
+
+You have the main flow right. The problem is that a few concepts are mixed together, and those few mistakes will cause you pain when you actually implement the server.
+
+Let's clean the whole thing up from the ground up.
+
+---
+
+# 1. First: OAuth vs OIDC
+
+The most important thing to lock into your head:
+
+> **OAuth 2.0 = authorization**
+>
+> **OIDC = authentication built on top of OAuth 2.0**
+
+Think:
+
+```text
+OAuth
+User
+  ↓
+Authorization Server
+  ↓
+Access Token
+  ↓
+Client uses protected API
+```
+
+OAuth answers:
+
+> "Is this client allowed to access this resource?"
+
+OIDC adds:
+
+```text
+OAuth
+  +
+ID Token
+  +
+User identity
+```
+
+OIDC answers:
+
+> "Who is the user that just authenticated?"
+
+So when you use Google:
+
+```text
+Google Authorization Server
+        │
+        ├── OAuth → Access Token
+        │
+        └── OIDC → ID Token
+```
+
+---
+
+# 2. Your entire architecture
+
+Before going into individual requests, imagine you are building your own Google.
+
+You have:
+
+```text
+                 YOUR SYSTEM
+┌──────────────────────────────────────────────┐
+│                                              │
+│        Authorization / OIDC Server           │
+│                                              │
+│  /o/authenticate                            │
+│  /o/token                                    │
+│  /o/userinfo                                 │
+│  /.well-known/openid-configuration           │
+│  /.well-known/jwks.json                      │
+│                                              │
+│             ↓                                │
+│          Database                            │
+│                                              │
+└──────────────────────────────────────────────┘
+                    ↑
+                    │ OAuth/OIDC
+                    │
+             ┌──────┴──────┐
+             │             │
+        Photo App      Another App
+        (Client)       (Client)
+```
+
+Your authorization server is essentially the thing you're trying to build.
+
+And a **client** is an application that wants to use your authorization server.
+
+For example:
+
+```text
+Your Auth Server
+      ↑
+      │
+      │
+PhotoApp
+```
+
+PhotoApp might say:
+
+> "I don't want to maintain passwords. Let this authorization server authenticate my users."
+
+---
+
+# 3. Step 1 — Client registration
+
+You were basically correct here.
+
+Before PhotoApp can use your OAuth/OIDC server, it registers itself.
+
+Something like:
+
+```http
+POST /oauth/register
+```
+
+with:
+
+```json
+{
+  "client_name": "Photo App",
+  "redirect_uris": [
+    "https://photoapp.com/oauth/callback"
+  ],
+  "scope": "openid profile email photos"
+}
+```
+
+Your authorization server creates:
+
+```text
+client_id
+client_secret
+```
+
+For example:
+
+```text
+client_id:
+photo_app_8f92d1
+
+client_secret:
+some-long-random-secret
+```
+
+### Important correction
+
+You said:
+
+> OAuth server hashes client secret and stores it in DB and sends client backend both.
+
+The general idea is fine, **but don't think of OAuth as requiring a particular client-secret storage algorithm.**
+
+For your implementation, absolutely don't store the raw secret if you don't need to.
+
+You can do:
+
+```text
+client_secret
+      ↓
+hash
+      ↓
+database
+```
+
+and return the actual secret **only when the client is registered**.
+
+The client then stores:
+
+```text
+client_id       → okay to expose
+client_secret   → confidential
+```
+
+---
+
+# 4. Now the actual login begins
+
+Suppose:
+
+```text
+PhotoApp
+```
+
+has:
+
+```text
+client_id = photo_app_123
+client_secret = SECRET
+redirect_uri = https://photoapp.com/oauth/callback
+```
+
+A user visits:
+
+```text
+photoapp.com
+```
+
+and clicks:
+
+> Login with MyAuthServer
+
+PhotoApp needs to send the user to:
+
+```text
+https://auth.example.com/o/authenticate
+```
+
+with something like:
+
+```text
+response_type=code
+client_id=photo_app_123
+redirect_uri=https://photoapp.com/oauth/callback
+scope=openid profile email
+state=abc123
+code_challenge=xyz789
+code_challenge_method=S256
+```
+
+---
+
+# 5. Let's understand EVERY parameter
+
+This is where you should slow down.
+
+## `response_type=code`
+
+You're saying:
+
+> "I want an authorization code."
+
+Not an access token directly.
+
+Modern Authorization Code Flow is:
+
+```text
+Authorization endpoint
+        ↓
+Authorization CODE
+        ↓
+Token endpoint
+        ↓
+Access Token + ID Token
+```
+
+The code is temporary.
+
+---
+
+# 6. `client_id`
+
+This identifies the application.
+
+```text
+client_id=photo_app_123
+```
+
+Your authorization server looks into its database:
+
+```text
+client_id
+    ↓
+Photo App
+redirect URI
+allowed scopes
+client authentication method
+...
+```
+
+---
+
+# 7. `redirect_uri`
+
+This is VERY important.
+
+You said:
+
+> redirect_uri tells Google where to redirect our user after authenticate
+
+Correct.
+
+But later you said:
+
+> token endpoint uses redirect_uri to tell Google where to send access token
+
+❌ **This is wrong.**
+
+The token endpoint does **not** redirect the access token to the redirect URI.
+
+Instead:
+
+### Authorization endpoint
+
+uses:
+
+```text
+redirect_uri
+```
+
+to redirect the **user's browser** back to the client.
+
+Example:
+
+```text
+Google
+  ↓
+302 Redirect
+  ↓
+https://photoapp.com/oauth/callback?code=ABC&state=XYZ
+```
+
+Then:
+
+```text
+PhotoApp backend
+      ↓
+POST Google token endpoint
+      ↓
+Access Token + ID Token
+```
+
+The token response comes directly in the **HTTP response to the backend**.
+
+There is no browser redirect involved here.
+
+This distinction is extremely important.
+
+---
+
+# 8. `scope`
+
+You are mostly correct.
+
+Scope represents permissions/claims requested.
+
+For OIDC:
+
+```text
+openid
+profile
+email
+```
+
+For OAuth APIs, you can have things like:
+
+```text
+photos.read
+photos.write
+contacts.read
+```
+
+So:
+
+```text
+scope=openid profile email photos.read
+```
+
+means approximately:
+
+```text
+openid
+→ I want OIDC authentication
+
+profile
+→ I want basic profile information
+
+email
+→ I want email information
+
+photos.read
+→ I want permission to read photos
+```
+
+### Important
+
+For OIDC, the `openid` scope is what makes the request an **OIDC request** rather than just OAuth.
+
+---
+
+# 9. `state`
+
+You said:
+
+> random string to prevent CSRF attacks
+
+✅ Correct.
+
+But understand what it actually does.
+
+Client generates:
+
+```text
+state = random_value_123
+```
+
+and stores it temporarily.
+
+Then sends:
+
+```text
+state=random_value_123
+```
+
+Authorization server eventually redirects:
+
+```text
+/photo/callback?code=ABC&state=random_value_123
+```
+
+Client checks:
+
+```text
+received state
+      ==
+stored state
+```
+
+If:
+
+```text
+ABC123 == ABC123
+```
+
+continue.
+
+If:
+
+```text
+ABC123 != XYZ789
+```
+
+reject.
+
+So `state` basically allows the client to say:
+
+> "I started an authorization request. I expect the response corresponding to THAT request."
+
+It does **not** prove that the response came from Google.
+
+---
+
+# 10. PKCE
+
+Your understanding here is also basically correct.
+
+Client generates:
+
+```text
+code_verifier
+```
+
+Example:
+
+```text
+random-super-long-secret-value
+```
+
+Then:
+
+```text
+code_challenge =
+BASE64URL(
+    SHA256(code_verifier)
+)
+```
+
+And sends:
+
+```text
+code_challenge=XYZ
+code_challenge_method=S256
+```
+
+to the authorization endpoint.
+
+Authorization server stores:
+
+```text
+authorization_code
+        ↓
+code_challenge
+        ↓
+client_id
+        ↓
+redirect_uri
+        ↓
+...
+```
+
+---
+
+# 11. User authenticates
+
+Now the authorization server does its job.
+
+It might show:
+
+```text
+Login
+
+Email:    __________
+Password: __________
+
+[ Sign in ]
+```
+
+After authentication, it might show:
+
+```text
+Photo App wants:
+
+☑ Read your profile
+☑ Read your email
+☑ Read your photos
+
+[Allow] [Deny]
+```
+
+User clicks:
+
+```text
+Allow
+```
+
+---
+
+# 12. Authorization server validates everything
+
+Your server now checks:
+
+```text
+client_id exists?
+        ↓
+redirect_uri registered for client?
+        ↓
+response_type supported?
+        ↓
+requested scopes allowed?
+        ↓
+user authenticated?
+        ↓
+user authorized requested scopes?
+        ↓
+PKCE challenge valid/request valid?
+```
+
+Then it creates:
+
+```text
+authorization_code
+```
+
+Something like:
+
+```text
+4f8a92bc...
+```
+
+This code should be:
+
+* random
+* short-lived
+* single-use
+* associated with the authorization request
+
+Database/Redis could contain:
+
+```text
+code: 4f8a92bc
+
+client_id: photo_app_123
+
+user_id: user_456
+
+redirect_uri: https://photoapp.com/oauth/callback
+
+scope: openid profile email photos.read
+
+code_challenge: xyz789
+
+expires_at: ...
+
+used: false
+```
+
+---
+
+# 13. Authorization server redirects browser
+
+Now:
+
+```text
+Auth Server
+     ↓
+302
+```
+
+to:
+
+```text
+https://photoapp.com/oauth/callback
+    ?code=4f8a92bc
+    &state=random_value_123
+```
+
+This is the **authorization response**.
+
+Notice:
+
+```text
+Access Token ❌
+ID Token ❌
+Client Secret ❌
+```
+
+Only:
+
+```text
+code
+state
+```
+
+---
+
+# 14. Client receives the code
+
+PhotoApp backend receives:
+
+```http
+GET /oauth/callback?code=4f8a92bc&state=random_value_123
+```
+
+It verifies:
+
+```text
+state
+```
+
+Then it exchanges the code.
+
+---
+
+# 15. Token request
+
+PhotoApp backend sends:
+
+```http
+POST /o/token
+```
+
+with:
+
+```text
+grant_type=authorization_code
+
+code=4f8a92bc
+
+client_id=photo_app_123
+
+client_secret=SECRET
+
+redirect_uri=https://photoapp.com/oauth/callback
+
+code_verifier=random-super-long-secret-value
+```
+
+### Important correction
+
+You called it:
+
+> query parameters
+
+They don't have to be query parameters.
+
+Typically token requests are sent in the **POST body**, commonly:
+
+```text
+application/x-www-form-urlencoded
+```
+
+---
+
+# 16. Token endpoint validates the authorization code
+
+Your token server now retrieves:
+
+```text
+4f8a92bc
+```
+
+and sees:
+
+```text
+client_id = photo_app_123
+user_id = user_456
+redirect_uri = https://photoapp.com/oauth/callback
+code_challenge = xyz789
+scope = openid profile email
+```
+
+Then checks:
+
+### Code valid?
+
+```text
+exists?
+```
+
+### Expired?
+
+```text
+expires_at > now?
+```
+
+### Already used?
+
+```text
+used == false?
+```
+
+### Client matches?
+
+```text
+request.client_id
+==
+code.client_id
+```
+
+### Redirect URI matches?
+
+```text
+request.redirect_uri
+==
+code.redirect_uri
+```
+
+### PKCE matches?
+
+Server computes:
+
+```text
+SHA256(code_verifier)
+```
+
+and compares it with:
+
+```text
+stored code_challenge
+```
+
+If everything matches:
+
+```text
+SUCCESS
+```
+
+---
+
+# 17. Now tokens are generated
+
+Token endpoint generates something like:
+
+```json
+{
+  "access_token": "eyJ....",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "id_token": "eyJ....",
+  "scope": "openid profile email"
+}
+```
+
+Now we're getting into the beautiful part.
+
+---
+
+# 18. Access Token vs ID Token
+
+This distinction needs to be absolutely crystal clear.
+
+## Access Token
+
+Used to access a protected resource.
+
+Example:
+
+```http
+GET /photos
+Authorization: Bearer ACCESS_TOKEN
+```
+
+Meaning:
+
+> "I have permission to access photos."
+
+The access token belongs to the **authorization** side.
+
+---
+
+## ID Token
+
+Used to tell the client:
+
+> "This is the user who authenticated."
+
+Example:
+
+```json
+{
+  "iss": "https://auth.example.com",
+  "sub": "user_456",
+  "aud": "photo_app_123",
+  "exp": 1780000000,
+  "iat": 1779996400,
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+```
+
+This is OIDC.
+
+---
+
+# 19. Your statement "ID token is JWT"
+
+Usually, yes.
+
+OIDC defines the ID Token as a **JWT**.
+
+And your server signs it.
+
+For example:
+
+```text
+                    Auth Server
+                         │
+                 private-key.pem
+                         │
+                         ↓
+                   Sign ID Token
+                         │
+                         ↓
+                     ID Token
+```
+
+Client receives it.
+
+Client gets your public key from:
+
+```text
+/.well-known/jwks.json
+```
+
+and verifies:
+
+```text
+signature
+```
+
+---
+
+# 20. Why public/private keys?
+
+This is one of the most important parts of your assignment.
+
+Your auth server has:
+
+```text
+PRIVATE KEY
+PUBLIC KEY
+```
+
+The authorization server keeps:
+
+```text
+private key 🔒
+```
+
+and publishes:
+
+```text
+public key 🌎
+```
+
+Your auth server signs:
+
+```text
+ID Token
+```
+
+with:
+
+```text
+PRIVATE KEY
+```
+
+Client verifies:
+
+```text
+ID Token
+```
+
+using:
+
+```text
+PUBLIC KEY
+```
+
+So:
+
+```text
+                AUTH SERVER
+                    │
+                    │ private key
+                    ↓
+               Sign JWT
+                    │
+                    ↓
+                ID TOKEN
+                    │
+                    │
+                    ↓
+                 CLIENT
+                    │
+                    │ public key
+                    ↓
+              Verify JWT
+```
+
+This is exactly why your:
+
+```text
+/.well-known/jwks.json
+```
+
+endpoint exists.
+
+---
+
+# 21. Now your discovery endpoint makes sense
+
+You don't want every client to manually configure:
+
+```text
+authorization_endpoint
+token_endpoint
+userinfo_endpoint
+jwks_uri
+supported scopes
+supported algorithms
+...
+```
+
+Instead the client can start with:
+
+```text
+https://auth.example.com/.well-known/openid-configuration
+```
+
+and receive metadata.
+
+This is called:
+
+> **OpenID Provider Configuration Information**
+
+It tells the client:
+
+> "Here is how to talk to me."
+
+---
+
+# 22. Your Google example
+
+Google gives:
+
+```json
+{
+  "issuer": "https://accounts.google.com",
+
+  "authorization_endpoint":
+    "https://accounts.google.com/o/oauth2/v2/auth",
+
+  "token_endpoint":
+    "https://oauth2.googleapis.com/token",
+
+  "userinfo_endpoint":
+    "https://openidconnect.googleapis.com/v1/userinfo",
+
+  "jwks_uri":
+    "https://www.googleapis.com/oauth2/v3/certs",
+
+  "response_types_supported": [
+    "code"
+  ],
+
+  "scopes_supported": [
+    "openid",
+    "email",
+    "profile"
+  ],
+
+  "id_token_signing_alg_values_supported": [
+    "RS256"
+  ],
+
+  "code_challenge_methods_supported": [
+    "S256"
+  ]
+}
+```
+
+Your server needs to publish **your own capabilities**.
+
+For example:
+
+```json
+{
+  "issuer": "http://localhost:9000",
+
+  "authorization_endpoint":
+    "http://localhost:9000/o/authenticate",
+
+  "token_endpoint":
+    "http://localhost:9000/o/token",
+
+  "userinfo_endpoint":
+    "http://localhost:9000/o/userinfo",
+
+  "jwks_uri":
+    "http://localhost:9000/.well-known/jwks.json",
+
+  "response_types_supported": [
+    "code"
+  ],
+
+  "subject_types_supported": [
+    "public"
+  ],
+
+  "id_token_signing_alg_values_supported": [
+    "RS256"
+  ],
+
+  "scopes_supported": [
+    "openid",
+    "profile",
+    "email"
+  ],
+
+  "claims_supported": [
+    "sub",
+    "name",
+    "email",
+    "email_verified",
+    "iat",
+    "exp",
+    "iss",
+    "aud"
+  ],
+
+  "code_challenge_methods_supported": [
+    "S256"
+  ],
+
+  "grant_types_supported": [
+    "authorization_code",
+    "refresh_token"
+  ],
+
+  "token_endpoint_auth_methods_supported": [
+    "client_secret_basic",
+    "client_secret_post"
+  ]
+}
+```
+
+But **don't blindly copy Google's metadata**.
+
+The metadata should describe what **your implementation actually supports**.
+
+---
+
+# 23. For your assignment, don't implement everything Google has
+
+This is VERY important.
+
+You showed Google's:
+
+```json
+"response_types_supported": [
+  "code",
+  "token",
+  "id_token",
+  "code token",
+  "code id_token",
+  ...
+]
+```
+
+You don't need to implement all of that.
+
+In fact, I would strongly recommend:
+
+### Start with only:
+
+```text
+Authorization Code Flow
++
+PKCE
++
+OIDC
+```
+
+Meaning:
+
+```text
+response_type = code
+```
+
+Only.
+
+Then:
+
+```text
+grant_type = authorization_code
+```
+
+and later:
+
+```text
+grant_type = refresh_token
+```
+
+---
+
+# 24. Your complete system should look like this
+
+This is the architecture I would build for your assignment:
+
+```text
+                         ┌──────────────────────┐
+                         │   YOUR AUTH SERVER   │
+                         │                      │
+                         │  User DB             │
+                         │  Client DB           │
+                         │  Authorization DB    │
+                         │  Token DB             │
+                         │                      │
+                         │  Private Key 🔒      │
+                         │  Public Key          │
+                         └──────────┬───────────┘
+                                    │
+             ┌──────────────────────┼─────────────────────┐
+             │                      │                     │
+             ↓                      ↓                     ↓
+      /.well-known/          /.well-known/          /o/authenticate
+      openid-configuration   jwks.json                   │
+                                                          │
+                                                          ↓
+                                                    /o/token
+                                                          │
+                                                          ↓
+                                                    /o/userinfo
+```
+
+And then:
+
+```text
+                 ┌───────────────┐
+                 │   Photo App   │
+                 │    CLIENT     │
+                 └───────┬───────┘
+                         │
+                         │ 1. Authorization Request
+                         ↓
+                 ┌───────────────┐
+                 │ Auth Server   │
+                 └───────┬───────┘
+                         │
+                    Login User
+                         │
+                    User Consent
+                         │
+                         ↓
+                    Auth Code
+                         │
+                         ↓
+                 Photo App Callback
+                         │
+                         │ 2. Token Request
+                         ↓
+                 ┌───────────────┐
+                 │ Token Endpoint│
+                 └───────┬───────┘
+                         │
+                         ↓
+              Access Token + ID Token
+                         │
+                         ↓
+                    Photo App
+```
+
+---
+
+# 25. One more important correction: `nonce`
+
+You included:
+
+```text
+nonce
+```
+
+but didn't explain it.
+
+`nonce` is an **OIDC-specific value** used to bind the ID Token to the authentication request.
+
+Client generates:
+
+```text
+nonce = random_value
+```
+
+Authorization request:
+
+```text
+nonce=abc123
+```
+
+Auth server puts it into the ID Token:
+
+```json
+{
+  "sub": "user123",
+  "aud": "photo-app",
+  "nonce": "abc123"
+}
+```
+
+Client verifies:
+
+```text
+ID token nonce
+      ==
+original nonce
+```
+
+So you can think:
+
+```text
+state
+ ↓
+protects authorization response/request correlation
+
+nonce
+ ↓
+protects/binds the OIDC ID Token to the authentication request
+
+PKCE
+ ↓
+protects authorization code exchange
+```
+
+They solve **different problems**.
+
+---
+
+# 26. One more correction: claims and scopes
+
+You said:
+
+> name, email, picture if requested in scope
+
+This is directionally right but slightly simplified.
+
+OIDC defines standard scopes such as:
+
+```text
+openid
+profile
+email
+address
+phone
+```
+
+which correspond to standard claims.
+
+For example:
+
+```text
+profile
+```
+
+can authorize claims such as:
+
+```text
+name
+family_name
+given_name
+picture
+locale
+...
+```
+
+and:
+
+```text
+email
+```
+
+relates to:
+
+```text
+email
+email_verified
+```
+
+But don't think:
+
+```text
+scope=profile
+```
+
+means:
+
+> "The ID token MUST contain every profile claim."
+
+The exact claims returned depend on the provider's implementation and whether claims are returned in the ID Token, UserInfo response, or otherwise.
+
+For your own implementation, you can choose a clean subset.
+
+---
+
+# 27. Another BIG thing: Access Token does not have to be JWT
+
+You said:
+
+> ID token is JWT
+
+✅ Yes.
+
+But don't assume:
+
+```text
+access_token = JWT
+```
+
+OAuth does **not** require access tokens to be JWTs.
+
+They can simply be opaque random strings:
+
+```text
+access_token =
+8f91a7c2b19...
+```
+
+Your resource server can look that up in a database.
+
+For learning, this is actually easier.
+
+---
+
+# 28. So your implementation roadmap should be this
+
+Don't try to code the entire thing simultaneously.
+
+Build it in this order:
+
+### Phase 1 — Client registration
+
+Create:
+
+```text
+clients
+```
+
+table/model.
+
+Store:
+
+```text
+client_id
+client_secret_hash
+client_name
+redirect_uris
+allowed_scopes
+```
+
+---
+
+### Phase 2 — Discovery
+
+Implement:
+
+```text
+GET /.well-known/openid-configuration
+```
+
+Return metadata describing **your implementation**.
+
+---
+
+### Phase 3 — JWKS
+
+Implement:
+
+```text
+GET /.well-known/jwks.json
+```
+
+Expose your public key.
+
+Keep private key completely private.
+
+---
+
+### Phase 4 — User authentication
+
+Implement:
+
+```text
+GET /o/authenticate
+```
+
+This endpoint:
+
+1. validates client
+2. validates redirect URI
+3. validates scopes
+4. validates response type
+5. validates PKCE
+6. shows login page
+
+---
+
+### Phase 5 — Login
+
+User submits:
+
+```text
+email
+password
+```
+
+Auth server authenticates them.
+
+Then show:
+
+```text
+Authorization / Consent
+```
+
+---
+
+### Phase 6 — Authorization code
+
+After consent:
+
+```text
+generate authorization code
+```
+
+Store:
+
+```text
+code
+client_id
+user_id
+redirect_uri
+scope
+code_challenge
+nonce
+expires_at
+```
+
+Then:
+
+```text
+302 → redirect_uri?code=...&state=...
+```
+
+---
+
+### Phase 7 — Token endpoint
+
+Implement:
+
+```text
+POST /o/token
+```
+
+Validate:
+
+```text
+code
+client_id
+client_secret
+redirect_uri
+code_verifier
+```
+
+Then issue:
+
+```text
+access_token
+id_token
+```
+
+---
+
+### Phase 8 — ID Token
+
+Create JWT:
+
+```json
+{
+  "iss": "http://localhost:9000",
+  "sub": "user123",
+  "aud": "client123",
+  "exp": 123456789,
+  "iat": 123456789,
+  "nonce": "..."
+}
+```
+
+Sign with:
+
+```text
+private-key.pem
+```
+
+---
+
+### Phase 9 — UserInfo
+
+Implement:
+
+```text
+GET /o/userinfo
+```
+
+Client sends:
+
+```http
+Authorization: Bearer ACCESS_TOKEN
+```
+
+Your server validates the access token and returns:
+
+```json
+{
+  "sub": "user123",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "email_verified": true
+}
+```
+
+---
+
+# 29. The whole thing in one picture
+
+If you remember **only this**, you'll be fine:
+
+```text
+                    CLIENT
+                      │
+                      │
+                      │ Authorization Request
+                      │
+                      │ client_id
+                      │ redirect_uri
+                      │ response_type=code
+                      │ scope
+                      │ state
+                      │ code_challenge
+                      │ nonce
+                      ↓
+              ┌─────────────────┐
+              │  AUTH SERVER    │
+              │                 │
+              │ Login           │
+              │ Consent         │
+              └────────┬────────┘
+                       │
+                       │ Authorization Code
+                       ↓
+                    CLIENT
+                       │
+                       │ POST /token
+                       │
+                       │ code
+                       │ client_id
+                       │ client_secret
+                       │ redirect_uri
+                       │ code_verifier
+                       ↓
+              ┌─────────────────┐
+              │ TOKEN ENDPOINT  │
+              └────────┬────────┘
+                       │
+                       │
+             ┌─────────┴──────────┐
+             ↓                    ↓
+        ACCESS TOKEN          ID TOKEN
+        (OAuth)               (OIDC/JWT)
+             │                    │
+             ↓                    ↓
+       API authorization     User identity
+```
+
+And your discovery endpoints tell the client **where all these pieces are and what your server supports**:
+
+```text
+/.well-known/openid-configuration
+            │
+            ├── authorization_endpoint
+            ├── token_endpoint
+            ├── userinfo_endpoint
+            ├── jwks_uri
+            ├── response_types_supported
+            ├── scopes_supported
+            ├── claims_supported
+            ├── grant_types_supported
+            └── code_challenge_methods_supported
+```
+
+---
+
+## And one thing I REALLY want you to understand
+
+You're currently trying to jump from:
+
+> "I vaguely understand OAuth"
+
+straight to:
+
+> "I'll implement an OAuth/OIDC provider."
+
+That's why your brain is exploding. 😂
+
+You **don't need to understand the entire OAuth specification before writing a single line of code**.
+
+For your project, we can deliberately implement a small but realistic subset:
+
+```text
+OAuth 2.0 Authorization Code Flow
+        +
+PKCE (S256)
+        +
+OIDC
+        +
+Client Registration
+        +
+Discovery
+        +
+JWKS
+        +
+ID Token
+        +
+UserInfo
+        +
+Refresh Token
+```
+
+And **we should build it endpoint-by-endpoint**, starting with the database/models and client registration, rather than dumping 2,000 lines of OAuth code on you.
+
+Your current mental model is already around **80–85% there**. The remaining 15–20% is mostly understanding exactly what each endpoint is responsible for and then translating that into your Express routes.
