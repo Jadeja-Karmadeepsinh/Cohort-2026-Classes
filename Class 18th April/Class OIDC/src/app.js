@@ -12,9 +12,7 @@ import { teamSponsorRoutes } from './modules/ipl-ms/sponsors/teamSponsor.routes.
 import { matchRoutes } from './modules/ipl-ms/matches/match.routes.js';
 import { seasonRoutes } from './modules/ipl-ms/seasons/season.routes.js';
 import { seasonstatsRoutes } from './modules/ipl-ms/seasons/player.season.stats.routes.js';
-import jose from 'node-jose';
-import { PRIVATE_KEY, PUBLIC_KEY } from './common/utils/cert.js';
-import { oidcRoutes } from './modules/oidc + oauth/oidc.routes.js';
+import { oidcRoutes } from './modules/oidc/oidc.routes.js';
 
 const app = express();
 
@@ -46,36 +44,16 @@ app.get('/health', (req, res) => {
     })
 })
 
+/*
+ * OIDC discovery + JWKS
+*/
+app.use(oidcRoutes);
 
 /*
-|--------------------------------------------------------------------------
-| OIDC ROUTES
-|--------------------------------------------------------------------------
+ * OAuth / OIDC
 */
+// app.use("/o", /* later our OAuth routes */);
 
-//! Service Discovery
-app.get('/.well-known/openid-configuration', (req, res) => {
-    const ISSUER = `http://localhost:${env.PORT}`;
-
-    return res.json({
-        issuer: ISSUER,
-        authorization_endpoint: `${ISSUER}/o/authenticate`,
-        userinfo_endpoint: `${ISSUER}/o/userinfo`,
-        jwks_uri: `${ISSUER}/.well-known/jwks.json`,
-        token_endpoint: `${ISSUER}/o/token`,
-        response_types_supported: [
-            "code"
-        ],
-    });
-});
-
-//! Public Key Endpoint
-app.get('/.well-known/jwks.json', async (req, res) => {
-    const key = await jose.JWK.asKey(PUBLIC_KEY, "pem");
-    return res.json({ keys: [key.toJSON()] });
-});
-
-app.use('/o', oidcRoutes);
 
 //! all the routes
 app.use('/api/auth', authRoutes);
