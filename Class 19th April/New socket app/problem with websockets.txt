@@ -743,3 +743,12 @@ one million checkboxes
 
 sir wanted to check the limit of a $5 machine when it crashes thats why they made 100000 checkboxes and added WebSockets to it to check and uncheck
 that machine took a decent load by this
+
+------------------------------------------------------------------------------------------------------------
+assignments
+------------------------------------------------------------------------------------------------------------
+write an artical on linux file system
+find intersting finding in it
+facts like everything is a file in linux even processes can be defined as files this kind of things 
+
+
