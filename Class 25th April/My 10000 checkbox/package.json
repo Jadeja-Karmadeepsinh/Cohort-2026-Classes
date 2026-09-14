@@ -2,10 +2,10 @@
   "name": "my-10000-checkbox",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "node --watch index.js"
+    "dev": "node --watch server.js"
   },
   "keywords": [],
   "author": "",
