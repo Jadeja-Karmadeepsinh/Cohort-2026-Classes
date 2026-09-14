@@ -5,6 +5,8 @@ import path from "path";
 import { connectDB } from "./db/db.js";
 import Checkbox from "./db/model.js";
 
+const PORT = process.env.PORT || 9000;
+
 async function main() {
     //! Connect DB
     await connectDB();
@@ -48,8 +50,8 @@ async function main() {
         });
     });
 
-    server.listen(9000, () => {
-        console.log("Server is running on PORT 9000");
+    server.listen(PORT, () => {
+        console.log(`Server is running on PORT ${PORT}`);
     });
 }
 
