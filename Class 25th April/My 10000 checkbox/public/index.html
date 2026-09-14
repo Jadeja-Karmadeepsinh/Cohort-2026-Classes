@@ -113,22 +113,6 @@
 
     <script src="/socket.io.min.js"></script>
     <script>
-        const socket = io();
-
-        socket.on("server:initial-checkbox-state", (checkboxStates) => {
-            checkboxStates.forEach((data) => {
-                const checkbox = document.getElementById(data.id);
-
-                if(checkbox) {
-                    checkbox.checked = data.checked;
-                }
-            });
-        });
-
-        socket.on("server:user:change", (data) => {
-            const checkbox = document.getElementById(data.id);
-            checkbox.checked = data.checked;
-        });
 
         const checkboxContainer = document.getElementById('checkbox-container');
         const checkboxes = Array.from({ length: 600 });
@@ -167,6 +151,39 @@
             wrapper.appendChild(label);
 
             checkboxContainer.appendChild(wrapper);
+        });
+
+
+        const socket = io();
+
+        socket.on("server:initial-checkbox-state", (checkboxStates) => {
+            checkboxStates.forEach((data) => {
+                const checkbox = document.getElementById(data.id);
+
+                if(checkbox) {
+                    checkbox.checked = data.checked;
+                }
+            });
+        });
+
+        socket.on("server:user:change", (data) => {
+            const checkbox = document.getElementById(data.id);
+            checkbox.checked = data.checked;
+        });
+
+        socket.on("connect", () => {
+            console.log(
+                "Socket connected:",
+                socket.id
+            );
+        });
+
+
+        socket.on("connect_error", (error) => {
+            console.error(
+                "Socket connection error:",
+                error
+            );
         });
     </script>
 </body>
