@@ -113,63 +113,140 @@
 
     <script src="/socket.io.min.js"></script>
     <script>
+        const checkboxContainer =
+            document.getElementById("checkbox-container");
 
-        const checkboxContainer = document.getElementById('checkbox-container');
-        const checkboxes = Array.from({ length: 600 });
+        const checkboxes =
+            Array.from({ length: 600 });
 
+        // Create all checkboxes first
         checkboxes.forEach((_, index) => {
-            const wrapper = document.createElement("div");
-            wrapper.classList.add("checkbox-wrapper");
 
-            const checkbox = document.createElement("input");
+            const wrapper =
+                document.createElement("div");
+
+            wrapper.classList.add(
+                "checkbox-wrapper"
+            );
+
+            const checkbox =
+                document.createElement("input");
+
             checkbox.type = "checkbox";
-            checkbox.id = `checkbox-${index + 1}`;
 
-            //EventListener
-            checkbox.addEventListener("change", (e) => {
-                const checkboxId = e.target.id;
-                const checked = e.target.checked;
+            checkbox.id =
+                `checkbox-${index + 1}`;
 
-                //Let it be here for while
-                console.log("Checkbox changed:");
-                console.log("ID:", checkboxId);
-                console.log("Checked:", checked);
+            checkbox.addEventListener(
+                "change",
+                (e) => {
 
-                const data = {
-                    id: checkboxId,
-                    checked
+                    const checkboxId =
+                        e.target.id;
+
+                    const checked =
+                        e.target.checked;
+
+                    console.log(
+                        "Checkbox changed:"
+                    );
+
+                    console.log(
+                        "ID:",
+                        checkboxId
+                    );
+
+                    console.log(
+                        "Checked:",
+                        checked
+                    );
+
+                    const data = {
+                        id: checkboxId,
+                        checked
+                    };
+
+                    socket.emit(
+                        "user:change",
+                        data
+                    );
                 }
+            );
 
-                socket.emit("user:change", data);
-            });
+            const label =
+                document.createElement("label");
 
-            const label = document.createElement("label");
-            label.htmlFor = checkbox.id;
-            label.textContent = `Checkbox ${index + 1}`;
+            label.htmlFor =
+                checkbox.id;
 
-            wrapper.appendChild(checkbox);
-            wrapper.appendChild(label);
+            label.textContent =
+                `Checkbox ${index + 1}`;
 
-            checkboxContainer.appendChild(wrapper);
+            wrapper.appendChild(
+                checkbox
+            );
+
+            wrapper.appendChild(
+                label
+            );
+
+            checkboxContainer.appendChild(
+                wrapper
+            );
         });
 
 
-        const socket = io();
+        // Connect to Socket.IO AFTER
+        // all checkboxes exist
+        const socket = io({
+            path: "/api/socket-io/socket.io",
+            transports: ["websocket"]
+        });
 
-        socket.on("server:initial-checkbox-state", (checkboxStates) => {
-            checkboxStates.forEach((data) => {
-                const checkbox = document.getElementById(data.id);
 
-                if(checkbox) {
-                    checkbox.checked = data.checked;
+        // Initial state from MongoDB
+        socket.on(
+            "server:initial-checkbox-state",
+            (checkboxStates) => {
+
+                console.log(
+                    "Initial checkbox state received:",
+                    checkboxStates
+                );
+
+                checkboxStates.forEach((data) => {
+
+                    const checkbox =
+                        document.getElementById(
+                            data.id
+                        );
+
+                    if (checkbox) {
+                        checkbox.checked =
+                            data.checked;
+                    }
+                });
+            }
+        );
+
+
+        // Changes from other users
+        socket.on(
+            "server:user:change",
+            (data) => {
+
+                const checkbox =
+                    document.getElementById(
+                        data.id
+                    );
+
+                if (checkbox) {
+                    checkbox.checked =
+                        data.checked;
                 }
-            });
-        });
+            }
+        );
 
-        socket.on("server:user:change", (data) => {
-            const checkbox = document.getElementById(data.id);
-            checkbox.checked = data.checked;
-        });
 
         socket.on("connect", () => {
             console.log(
