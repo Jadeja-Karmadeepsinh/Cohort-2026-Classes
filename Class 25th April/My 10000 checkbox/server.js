@@ -2,8 +2,12 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import path from "path";
+import { fileURLToPath } from 'url'
 import { connectDB } from "./db/db.js";
 import Checkbox from "./db/model.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 9000;
 
@@ -12,7 +16,8 @@ async function main() {
     await connectDB();
 
     const app = express();
-    app.use(express.static(path.resolve("./public")));
+    console.log("ROOT_DIR: ", __dirname);
+    app.use(express.static(path.join(__dirname, "public")));
 
     const server = http.createServer(app);
     const io = new Server();
