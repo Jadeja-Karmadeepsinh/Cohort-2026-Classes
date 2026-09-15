@@ -1,8 +1,9 @@
 import http from "node:http";
 import app from "./src/index.js";
+import { env } from "./src/common/config/env.js";
 import { setupSocketIO } from "./src/sockets/socket.js";
 
-const PORT = process.env.PORT ?? 8000;
+const PORT = env.PORT ?? 8000;
 
 async function main() {
     const server = http.createServer(app);

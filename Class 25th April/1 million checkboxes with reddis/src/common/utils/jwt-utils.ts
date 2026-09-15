@@ -1,0 +1,64 @@
+import crypto from "crypto";
+import jwt from "jsonwebtoken";
+import { env } from "../config/env.js";
+import { ApiError } from "./api-error.js";
+
+const ACCESS_SECRET = env.JWT_ACCESS_SECRET;
+const REFRESH_SECRET = env.JWT_REFRESH_SECRET;
+
+export interface TokenPayload extends jwt.JwtPayload {
+    userId: string;
+    type: "access" | "refresh";
+}
+
+export const generateAccessToken = (payload: { userId: string}): string => {
+    const options = {
+        expiresIn: env.JWT_ACCESS_EXPIRES_IN || "15m"
+    } as jwt.SignOptions;
+
+    return jwt.sign({ ...payload, type: "access" }, ACCESS_SECRET, options);
+}   
+
+export const verifyAccessToken = (token: string): TokenPayload => {
+    try {
+        const decoded = jwt.verify(ACCESS_SECRET, token) as TokenPayload;
+
+        if(decoded.type !== "access") {
+            throw new Error("Wrong token type");
+        }
+
+        return decoded;
+    } catch (error) {
+        if(error instanceof jwt.TokenExpiredError) {
+            console.warn("[JWT] Access token expired");
+        }
+
+        throw ApiError.unauthorized("Invalid or expired access token");
+    }
+}
+
+export const generateRefreshToken = (payload: { userId: string }): string => {
+    const options = {
+        expiresIn: env.JWT_REFRESH_EXPIRES_IN || "7d"
+    } as jwt.SignOptions;
+
+    return jwt.sign({ ...payload, type: "refresh" }, REFRESH_SECRET, options);
+}
+
+export const verifyRefreshToken = (token: string): TokenPayload => {
+    try {
+        const decoded = jwt.verify(REFRESH_SECRET, token) as TokenPayload;
+
+        if(decoded.type !== "refresh") {
+            throw new Error("Wrong token type");
+        }
+
+        return decoded;
+    } catch (error) {
+        if(error instanceof jwt.TokenExpiredError) {
+            console.warn("[JWT] Refresh token expired");
+        }
+
+        throw ApiError.unauthorized("Invalid or expired access token");
+    }
+}

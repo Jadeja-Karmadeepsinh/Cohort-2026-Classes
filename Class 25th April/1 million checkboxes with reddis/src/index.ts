@@ -1,13 +1,10 @@
 import path from "node:path";
-// import { fileURLToPath } from "node:url";
-import "dotenv/config";
+import { env } from "./common/config/env.js"
 import express from "express";
 // cookie-parser does not ship with TypeScript declarations.
 // @ts-expect-error: The package is used as middleware and has no bundled types.
 import cookieParser from 'cookie-parser';
 
-// const __filename = fileURLToPath(import.meta.url);
-// const __dirname = path.dirname(__filename);
 const ROOT_DIR = process.cwd();
 
 const app = express();
@@ -29,7 +26,7 @@ app.use(express.static(path.join(ROOT_DIR, "public")));
 | REQUEST LOGGER
 |--------------------------------------------------------------------------
 */
-if(process.env.NODE_ENV === "development") {
+if(env.NODE_ENV === "development") {
     app.use((req, _res, next) => {
         console.log(`IP: ${req.ip} REQ: ${req.method} ${req.originalUrl}`);
         next();
