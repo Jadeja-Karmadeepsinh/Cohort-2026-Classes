@@ -4,7 +4,7 @@ import express from "express";
 // cookie-parser does not ship with TypeScript declarations.
 // @ts-expect-error: The package is used as middleware and has no bundled types.
 import cookieParser from 'cookie-parser';
-
+import { errorHandler } from "./common/middleware/error.middleware.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 
 const ROOT_DIR = process.cwd();
@@ -93,5 +93,6 @@ app.use((_req, res) => {
 | MUST be after all routes and middleware.
 |
 */
+app.use(errorHandler);
 
 export default app;

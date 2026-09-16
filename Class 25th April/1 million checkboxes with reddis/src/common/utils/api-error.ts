@@ -43,4 +43,8 @@ export class ApiError extends Error {
     static internal(message: string = "Internal Server Error"): ApiError {
         return new ApiError(HttpStatus.INTERNAL_SERVER_ERROR, message);
     }
+
+    static ratelimit(message: string = "Too many requests. Try again later."): ApiError {
+        return new ApiError(HttpStatus.TOO_MANY_REQUESTS, message);
+    }
 }
