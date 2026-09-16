@@ -5,6 +5,8 @@ const envSchema = z.object({
     PORT: z.coerce.number().int().positive().default(8000),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 
+    REDIS_URL: z.string().min(1),
+
     JWT_ACCESS_SECRET: z.string().min(32, { message: "JWT access secret must be at least 32 characters" }),
     JWT_REFRESH_SECRET: z.string().min(32, { message: "JWT refresh secret must be at least 32 characters" }),
     JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),

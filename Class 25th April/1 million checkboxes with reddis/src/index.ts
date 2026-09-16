@@ -5,6 +5,8 @@ import express from "express";
 // @ts-expect-error: The package is used as middleware and has no bundled types.
 import cookieParser from 'cookie-parser';
 
+import { authRoutes } from "./modules/auth/auth.routes.js";
+
 const ROOT_DIR = process.cwd();
 
 const app = express();
@@ -45,6 +47,15 @@ app.get('/health', (_req, res) => {
         timestamp: new Date().toISOString()
     })
 });
+
+
+/*
+|--------------------------------------------------------------------------
+| ROUTES
+|--------------------------------------------------------------------------
+*/
+app.use("/api/auth", authRoutes);
+// app.use("/api/checkboxes", checkboxRoutes);
 
 
 /*
