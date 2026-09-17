@@ -6,6 +6,7 @@ import express from "express";
 import cookieParser from 'cookie-parser';
 import { errorHandler } from "./common/middleware/error.middleware.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
+import { checkboxRoutes } from "./modules/checkbox/checkbox.routes.js";
 
 const ROOT_DIR = process.cwd();
 
@@ -55,7 +56,7 @@ app.get('/health', (_req, res) => {
 |--------------------------------------------------------------------------
 */
 app.use("/api/auth", authRoutes);
-// app.use("/api/checkboxes", checkboxRoutes);
+app.use("/api/checkbox", checkboxRoutes);
 
 
 /*

@@ -502,7 +502,7 @@
                 </div>
 
                 <div class="counter">
-                    600 Connections
+                    600 Checkboxes
                 </div>
 
             </div>
@@ -528,61 +528,63 @@
 
     <!-- Creates the 600 checkboxes -->
     <!-- socket io code -->
-    <script>
-
-        const checkboxGrid =
-            document.getElementById("checkboxGrid");
-
-
-        for (let i = 1; i <= 600; i++) {
-
-            const label =
-                document.createElement("label");
-
-            label.className = "connection";
-
-
-            const checkbox =
-                document.createElement("input");
-
-            checkbox.type = "checkbox";
-
-            checkbox.className =
-                "connection-checkbox";
-
-            checkbox.id =
-                `checkbox-${i}`;
-
-            //! Checkbox event emit
-            checkbox.addEventListener("change", (e) => {
-                console.log(`ID: ${e.target.id} CHECKED: ${e.target.checked}`);
-            });
-
-            const number =
-                document.createElement("span");
-
-            number.className =
-                "connection-number";
-
-            number.textContent =
-                String(i).padStart(3, "0");
-
-
-            label.appendChild(checkbox);
-
-            label.appendChild(number);
-
-            checkboxGrid.appendChild(label);
-
-        }
-
-    </script>
-
 
     <!-- YOUR SOCKET.IO CODE - UNTOUCHED -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
+        window.addEventListener("load", async () => {
+            const response = await fetch('api/checkbox/checkboxes', { method: 'GET' });
+            const resData = await response.json();
+
+            console.log(resData);
+
+            if(resData.data) {
+                Object.entries(resData.data).forEach(([checkboxId, checked]) => {
+                    const checkbox = document.getElementById(checkboxId);
+
+                    if(checkbox) {
+                        checkbox.checked = checked;
+                    }
+                });
+            }
+        })
+
         const socket = io();
+
+        const checkboxGrid = document.getElementById("checkboxGrid");
+
+        for (let i = 1; i <= 600; i++) {
+            const label = document.createElement("label");
+            label.className = "connection";
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.className = "connection-checkbox";
+            checkbox.id = `checkbox-${i}`;
+
+            //! Checkbox event emit
+            checkbox.addEventListener("change", (e) => {
+                // console.log(`ID: ${e.target.id} CHECKED: ${e.target.checked}`);
+                socket.emit("client:checkbox:change", { id: e.target.id, checked: e.target.checked });
+            });
+
+            const number = document.createElement("span");
+            number.className = "connection-number";
+            number.textContent = String(i).padStart(3, "0");
+
+            label.appendChild(checkbox);
+            label.appendChild(number);
+
+            checkboxGrid.appendChild(label);
+        }
+
+        socket.on("server:checkbox:change", (data) => {
+            const checkbox = document.getElementById(data.id);
+
+            if(checkbox) {
+                checkbox.checked = data.checked;
+            }
+        });
     </script>
 </body>
 </html>
