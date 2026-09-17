@@ -8,7 +8,7 @@ export function setupSocketIO(server: HTTPServer) {
         console.log("User connected:", socket.id);
 
         socket.on("disconnect", () => {
-            console.log("User disconnected:", socket.id)
+            console.log("User disconnected:", socket.id);
         });
     });
 
