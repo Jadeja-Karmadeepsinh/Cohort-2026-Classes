@@ -21,7 +21,7 @@ export const generateAccessToken = (payload: { userId: string}): string => {
 
 export const verifyAccessToken = (token: string): TokenPayload => {
     try {
-        const decoded = jwt.verify(ACCESS_SECRET, token) as TokenPayload;
+        const decoded = jwt.verify(token, ACCESS_SECRET) as TokenPayload;
 
         if(decoded.type !== "access") {
             throw new Error("Wrong token type");
@@ -47,7 +47,7 @@ export const generateRefreshToken = (payload: { userId: string }): string => {
 
 export const verifyRefreshToken = (token: string): TokenPayload => {
     try {
-        const decoded = jwt.verify(REFRESH_SECRET, token) as TokenPayload;
+        const decoded = jwt.verify(token, REFRESH_SECRET) as TokenPayload;
 
         if(decoded.type !== "refresh") {
             throw new Error("Wrong token type");

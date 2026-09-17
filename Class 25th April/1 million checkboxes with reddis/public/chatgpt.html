@@ -1129,22 +1129,13 @@
                     const checkbox = document.getElementById(checkboxId);
 
                     if(checkbox) {
-                        checkbox.checked = checked === "1";
+                        checkbox.checked = checked;
                     }
                 });
             }
         })
 
         const socket = io();
-
-        socket.on("connect", () => {
-            console.log("SOCKET CONNECTED:", socket.id);
-        });
-        
-        socket.on("connect_error", (error) => {
-            console.error("SOCKET CONNECTION ERROR:", error.message);
-        });
-
 
         const checkboxGrid = document.getElementById("checkboxGrid");
 

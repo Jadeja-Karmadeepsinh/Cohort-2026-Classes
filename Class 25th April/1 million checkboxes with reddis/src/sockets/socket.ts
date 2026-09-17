@@ -1,5 +1,5 @@
 import { Server } from "socket.io";
-import * as cookie from "cookie";
+import { parseCookie } from "cookie";
 import type { Server as HTTPServer } from "node:http";
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "./socket.types.js";
 import { CheckBoxRepository } from "../modules/checkbox/checkbox.repository.js";
@@ -24,11 +24,15 @@ export function setupSocketIO(server: HTTPServer) {
         try {
             const cookieHeader = socket.handshake.headers.cookie;
 
+            console.log("SOCKET COOKIE:", cookieHeader);
+
             if(!cookieHeader) {
                 return next(ApiError.unauthorized("Authentication required"));
             }
 
-            const cookies = cookie.parse(cookieHeader);
+            const cookies = parseCookie(cookieHeader);
+
+            console.log("SOCKET COOKIES:", cookies);
 
             const accessToken = cookies.accessToken;
 
@@ -38,10 +42,13 @@ export function setupSocketIO(server: HTTPServer) {
 
             const decoded = verifyAccessToken(accessToken);
 
+            console.log("SOCKET USER:", decoded.userId);
+
             socket.data.userId = decoded.userId;
 
             next();
         } catch (error) {
+            console.error("SOCKET AUTH ERROR:", error);
             next(ApiError.unauthorized("Invalid or expired access token"));
         }
     });
