@@ -585,6 +585,10 @@
                 checkbox.checked = data.checked;
             }
         });
+
+        socket.on("error", (data) => {
+            //! TODO: create an error notification alert
+        });
     </script>
 </body>
 </html>
