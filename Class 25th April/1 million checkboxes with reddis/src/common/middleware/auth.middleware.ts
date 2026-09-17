@@ -22,6 +22,6 @@ export function requireAuth (
 
         next();
     } catch (error) {
-        throw ApiError.unauthorized("Invalid or expired access token");
+        next(error);
     }
 }

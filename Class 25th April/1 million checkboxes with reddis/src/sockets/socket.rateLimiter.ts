@@ -1,7 +1,7 @@
 import { redis } from "../common/config/redis.js";
 
 const MAX_REQUESTS = 10;
-const WINDOW_SECONDS = 60;
+const WINDOW_SECONDS = 20;
 
 export async function checkSocketRateLimit(userId: string): Promise<boolean> {
     const key = `rate-limit:socket:${userId}`;

@@ -636,6 +636,62 @@
         .auth-switch button:hover {
             color: white;
         }
+
+
+        /* ================================
+            SOCKET ERROR NOTIFICATION
+        ================================ */
+
+        .socket-notification {
+            position: fixed;
+            right: 25px;
+            bottom: 25px;
+            z-index: 10000;
+        
+            min-width: 280px;
+            max-width: 380px;
+        
+            padding: 15px 18px;
+        
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+        
+            background: rgba(35, 12, 18, 0.95);
+            backdrop-filter: blur(15px);
+        
+            color: #fca5a5;
+            font-size: 13px;
+            line-height: 1.5;
+        
+            box-shadow:
+                0 15px 40px rgba(0, 0, 0, 0.4),
+                0 0 20px rgba(239, 68, 68, 0.08);
+        
+            opacity: 0;
+            transform: translateY(20px);
+            pointer-events: none;
+        
+            transition:
+                opacity 0.25s ease,
+                transform 0.25s ease;
+        }
+
+        .socket-notification.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .socket-notification-title {
+            margin-bottom: 4px;
+        
+            color: #f87171;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .socket-notification-message {
+            color: #fca5a5;
+        }
     </style>
 </head>
 
@@ -822,372 +878,572 @@
         </div>
     </div>
 
+    <!-- Socket Error Notification -->
+    <div class="socket-notification" id="socketNotification">
+        <div class="socket-notification-title">
+            Socket Error
+        </div>
+
+        <div
+            class="socket-notification-message"
+            id="socketNotificationMessage"
+        ></div>
+    </div>
 
     <!-- Creates the 600 checkboxes -->
     <!-- socket io code -->
 
     <!-- YOUR SOCKET.IO CODE - UNTOUCHED -->
     <script src="/socket.io/socket.io.js"></script>
+
     <script>
 
+    // ================================
+    // AUTHENTICATION DIALOG
+    // ================================
+
+    let isAuthenticated = false;
+    let authMode = "login";
+
+    const authModal = document.getElementById("authModal");
+    const authClose = document.getElementById("authClose");
+
+    const authForm = document.getElementById("authForm");
+
+    const authTitle = document.getElementById("authTitle");
+    const authDescription = document.getElementById("authDescription");
+
+    const authName = document.getElementById("authName");
+    const authEmail = document.getElementById("authEmail");
+    const authPassword = document.getElementById("authPassword");
+
+    const authSubmit = document.getElementById("authSubmit");
+
+    const authError = document.getElementById("authError");
+
+    const authSwitchText = document.getElementById("authSwitchText");
+    const authSwitchButton = document.getElementById("authSwitchButton");
+
+    const socketNotification = document.getElementById("socketNotification");
+    const socketNotificationMessage = document.getElementById("socketNotificationMessage");
+    let socketNotificationTimeout;
 
 
+    // --------------------------------
+    // Open modal
+    // --------------------------------
 
-        // ================================
-        // AUTHENTICATION DIALOG
-        // ================================
+    function openAuthModal() {
 
-        let isAuthenticated = false;
-        let authMode = "login";
+        authModal.classList.add("active");
 
-        const authModal = document.getElementById("authModal");
-        const authClose = document.getElementById("authClose");
+        authError.textContent = "";
+        authError.classList.remove("active");
 
-        const authForm = document.getElementById("authForm");
-
-        const authTitle = document.getElementById("authTitle");
-        const authDescription = document.getElementById("authDescription");
-
-        const authName = document.getElementById("authName");
-        const authEmail = document.getElementById("authEmail");
-        const authPassword = document.getElementById("authPassword");
-
-        const authSubmit = document.getElementById("authSubmit");
-
-        const authError = document.getElementById("authError");
-
-        const authSwitchText = document.getElementById("authSwitchText");
-        const authSwitchButton = document.getElementById("authSwitchButton");
+        authEmail.focus();
+    }
 
 
-        // --------------------------------
-        // Open modal
-        // --------------------------------
+    // --------------------------------
+    // Close modal
+    // --------------------------------
 
-        function openAuthModal() {
-            authModal.classList.add("active");
+    function closeAuthModal() {
 
-            authError.textContent = "";
-            authError.classList.remove("active");
+        authModal.classList.remove("active");
 
-            authEmail.focus();
+        authForm.reset();
+
+        authError.textContent = "";
+        authError.classList.remove("active");
+    }
+
+
+    function showSocketNotification(message) {
+        clearTimeout(socketNotificationTimeout);
+
+        socketNotificationMessage.textContent = message;
+
+        socketNotification.classList.add("active");
+
+        socketNotificationTimeout = setTimeout(() => {
+            socketNotification.classList.remove("active");
+        }, 4000);
+    }
+
+
+    // --------------------------------
+    // Update Login/Register UI
+    // --------------------------------
+
+    function updateAuthMode() {
+
+        if (authMode === "login") {
+
+            authTitle.textContent = "Sign In";
+
+            authDescription.textContent =
+                "Sign in to interact with the real-time checkboxes.";
+
+            authName.style.display = "none";
+
+            authName.required = false;
+
+            authPassword.autocomplete = "current-password";
+
+            authSubmit.textContent = "Sign In";
+
+            authSwitchText.textContent =
+                "Don't have an account?";
+
+            authSwitchButton.textContent =
+                "Register";
+
+        } else {
+
+            authTitle.textContent = "Create Account";
+
+            authDescription.textContent =
+                "Create an account to interact with the real-time checkboxes.";
+
+            authName.style.display = "block";
+
+            authName.required = true;
+
+            authPassword.autocomplete = "new-password";
+
+            authSubmit.textContent = "Register";
+
+            authSwitchText.textContent =
+                "Already have an account?";
+
+            authSwitchButton.textContent =
+                "Sign In";
+        }
+    }
+
+
+    // --------------------------------
+    // Close button
+    // --------------------------------
+
+    authClose.addEventListener("click", () => {
+
+        closeAuthModal();
+
+    });
+
+
+    // --------------------------------
+    // Switch Login/Register
+    // --------------------------------
+
+    authSwitchButton.addEventListener("click", () => {
+
+        if (authMode === "login") {
+
+            authMode = "register";
+
+        } else {
+
+            authMode = "login";
+
         }
 
-
-        // --------------------------------
-        // Close modal
-        // --------------------------------
-
-        function closeAuthModal() {
-            authModal.classList.remove("active");
-
-            authForm.reset();
-
-            authError.textContent = "";
-            authError.classList.remove("active");
-        }
-
-
-        // --------------------------------
-        // Update Login/Register UI
-        // --------------------------------
-
-        function updateAuthMode() {
-
-            if (authMode === "login") {
-
-                authTitle.textContent = "Sign In";
-
-                authDescription.textContent =
-                    "Sign in to interact with the real-time checkboxes.";
-
-                authName.style.display = "none";
-
-                authName.required = false;
-
-                authPassword.autocomplete = "current-password";
-
-                authSubmit.textContent = "Sign In";
-
-                authSwitchText.textContent =
-                    "Don't have an account?";
-
-                authSwitchButton.textContent =
-                    "Register";
-
-            } else {
-
-                authTitle.textContent = "Create Account";
-
-                authDescription.textContent =
-                    "Create an account to interact with the real-time checkboxes.";
-
-                authName.style.display = "block";
-
-                authName.required = true;
-
-                authPassword.autocomplete = "new-password";
-
-                authSubmit.textContent = "Register";
-
-                authSwitchText.textContent =
-                    "Already have an account?";
-
-                authSwitchButton.textContent =
-                    "Sign In";
-            }
-        }
-
-
-        // --------------------------------
-        // Close button
-        // --------------------------------
-
-        authClose.addEventListener("click", () => {
-            closeAuthModal();
-        });
-
-
-        // --------------------------------
-        // Switch Login/Register
-        // --------------------------------
-
-        authSwitchButton.addEventListener("click", () => {
-
-            if (authMode === "login") {
-                authMode = "register";
-            } else {
-                authMode = "login";
-            }
-
-            authError.textContent = "";
-            authError.classList.remove("active");
-
-            updateAuthMode();
-        });
-
-
-        // --------------------------------
-        // Close when clicking outside box
-        // --------------------------------
-
-        authModal.addEventListener("click", (event) => {
-
-            if (event.target === authModal) {
-                closeAuthModal();
-            }
-
-        });
-
-
-        // --------------------------------
-        // Authentication request
-        // --------------------------------
-
-        authForm.addEventListener("submit", async (event) => {
-
-            event.preventDefault();
-
-            authError.textContent = "";
-            authError.classList.remove("active");
-
-            authSubmit.disabled = true;
-
-            try {
-
-                const endpoint =
-                    authMode === "login"
-                        ? "/api/auth/login"
-                        : "/api/auth/register";
-
-
-                const body =
-                    authMode === "login"
-                        ? {
-                            email: authEmail.value.trim(),
-                            password: authPassword.value
-                        }
-                        : {
-                            name: authName.value.trim(),
-                            email: authEmail.value.trim(),
-                            password: authPassword.value
-                        };
-
-
-                const response = await fetch(endpoint, {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-
-                    credentials: "include",
-
-                    body: JSON.stringify(body)
-                });
-
-
-                const resData = await response.json();
-
-
-                if (!response.ok) {
-
-                    throw new Error(
-                        resData.message || "Authentication failed"
-                    );
-
-                }
-
-
-                // Authentication successful
-                isAuthenticated = true;
-
-                closeAuthModal();
-
-                console.log("Authentication successful");
-
-                socket.connect();
-
-            } catch (error) {
-
-                authError.textContent =
-                    error.message || "Authentication failed";
-
-                authError.classList.add("active");
-
-            } finally {
-
-                authSubmit.disabled = false;
-
-            }
-
-        });
-
-
-        // --------------------------------
-        // Initial mode
-        // --------------------------------
+        authError.textContent = "";
+        authError.classList.remove("active");
 
         updateAuthMode();
 
+    });
 
-        // --------------------------------
-        // Checkbox authentication gate
-        //
-        // IMPORTANT:
-        // We are NOT changing your existing
-        // checkbox change listener.
-        // --------------------------------
 
-        document.addEventListener("click", (event) => {
+    // --------------------------------
+    // Close when clicking outside box
+    // --------------------------------
 
-            const checkbox = event.target.closest(
-                ".connection-checkbox"
+    authModal.addEventListener("click", (event) => {
+
+        if (event.target === authModal) {
+
+            closeAuthModal();
+
+        }
+
+    });
+
+
+    // --------------------------------
+    // Authentication request
+    // --------------------------------
+
+    authForm.addEventListener("submit", async (event) => {
+
+        event.preventDefault();
+
+        authError.textContent = "";
+        authError.classList.remove("active");
+
+        authSubmit.disabled = true;
+
+        try {
+
+            const endpoint =
+                authMode === "login"
+                    ? "/api/auth/login"
+                    : "/api/auth/register";
+
+
+            const body =
+                authMode === "login"
+                    ? {
+                        email: authEmail.value.trim(),
+                        password: authPassword.value
+                    }
+                    : {
+                        name: authName.value.trim(),
+                        email: authEmail.value.trim(),
+                        password: authPassword.value
+                    };
+
+
+            const response = await fetch(endpoint, {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                credentials: "include",
+
+                body: JSON.stringify(body)
+
+            });
+
+
+            const resData = await response.json();
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    resData.message || "Authentication failed"
+                );
+
+            }
+
+
+            // Authentication successful
+
+            isAuthenticated = true;
+
+            closeAuthModal();
+
+            console.log("Authentication successful");
+
+            socket.connect();
+
+        } catch (error) {
+
+            authError.textContent =
+                error.message || "Authentication failed";
+
+            authError.classList.add("active");
+
+        } finally {
+
+            authSubmit.disabled = false;
+
+        }
+
+    });
+
+
+    // --------------------------------
+    // Initial mode
+    // --------------------------------
+
+    updateAuthMode();
+
+
+    // --------------------------------
+    // Checkbox authentication gate
+    // --------------------------------
+
+    document.addEventListener("click", (event) => {
+
+        const checkbox = event.target.closest(
+            ".connection-checkbox"
+        );
+
+
+        if (!checkbox) {
+
+            return;
+
+        }
+
+
+        if (!isAuthenticated) {
+
+            event.preventDefault();
+
+            authMode = "login";
+
+            updateAuthMode();
+
+            openAuthModal();
+
+        }
+
+    }, true);
+
+
+    // --------------------------------
+    // Socket.IO
+    // --------------------------------
+
+    const socket = io();
+
+
+    socket.on("connect", () => {
+
+        console.log("SOCKET CONNECTED:", socket.id);
+
+    });
+
+
+    socket.on("connect_error", (error) => {
+
+        console.error(
+            "SOCKET CONNECTION ERROR:",
+            error.message
+        );
+
+    });
+
+
+    // --------------------------------
+    // Restore authentication
+    // --------------------------------
+    //
+    // The browser automatically sends
+    // the HTTP-only accessToken cookie.
+    //
+    // Backend:
+    // GET /api/auth/me
+    //
+    // 200 -> token valid
+    // 401 -> token invalid/expired
+    // --------------------------------
+
+    async function restoreAuthentication() {
+
+        try {
+
+            const response = await fetch(
+                "/api/auth/me",
+                {
+                    method: "GET",
+                    credentials: "include"
+                }
             );
 
 
-            if (!checkbox) {
+            if (!response.ok) {
+
+                console.log(
+                    "No valid authentication session."
+                );
+
+                isAuthenticated = false;
+
                 return;
+
             }
 
 
-            if (!isAuthenticated) {
+            // Access token is valid
 
-                event.preventDefault();
+            isAuthenticated = true;
 
-                authMode = "login";
+            console.log(
+                "Authentication restored."
+            );
 
-                updateAuthMode();
 
-                openAuthModal();
+            // Connect Socket.IO using
+            // the existing accessToken cookie
+
+            socket.connect();
+
+        } catch (error) {
+
+            console.error(
+                "Authentication restore failed:",
+                error
+            );
+
+            isAuthenticated = false;
+
+        }
+
+    }
+
+
+    // --------------------------------
+    // Create 600 checkboxes
+    // --------------------------------
+
+    const checkboxGrid =
+        document.getElementById("checkboxGrid");
+
+
+    for (let i = 1; i <= 600; i++) {
+
+        const label =
+            document.createElement("label");
+
+        label.className = "connection";
+
+
+        const checkbox =
+            document.createElement("input");
+
+        checkbox.type = "checkbox";
+
+        checkbox.className =
+            "connection-checkbox";
+
+        checkbox.id =
+            `checkbox-${i}`;
+
+
+        // Checkbox event emit
+
+        checkbox.addEventListener(
+            "change",
+            (e) => {
+
+                socket.emit(
+                    "client:checkbox:change",
+                    {
+                        id: e.target.id,
+                        checked: e.target.checked
+                    }
+                );
+
+            }
+        );
+
+
+        const number =
+            document.createElement("span");
+
+        number.className =
+            "connection-number";
+
+        number.textContent =
+            String(i).padStart(3, "0");
+
+
+        label.appendChild(checkbox);
+
+        label.appendChild(number);
+
+        checkboxGrid.appendChild(label);
+
+    }
+
+
+    // --------------------------------
+    // Receive checkbox changes
+    // --------------------------------
+
+    socket.on(
+        "server:checkbox:change",
+        (data) => {
+
+            const checkbox =
+                document.getElementById(data.id);
+
+
+            if (checkbox) {
+
+                checkbox.checked =
+                    data.checked;
+
             }
 
-        }, true);
-
-        
-
+        }
+    );
 
 
+    socket.on("error", (data) => {
+        showSocketNotification(
+            data.message || "Something went wrong."
+        );
+    });
 
 
+    // --------------------------------
+    // Load checkbox state + restore auth
+    // --------------------------------
+
+    window.addEventListener(
+        "load",
+        async () => {
+
+            // First check whether the existing
+            // accessToken cookie is still valid.
+
+            await restoreAuthentication();
 
 
+            // Then load the persisted checkbox state.
+
+            const response = await fetch(
+                "/api/checkbox/checkboxes",
+                {
+                    method: "GET"
+                }
+            );
 
 
+            const resData =
+                await response.json();
 
-
-
-
-        window.addEventListener("load", async () => {
-            const response = await fetch('api/checkbox/checkboxes', { method: 'GET' });
-            const resData = await response.json();
 
             console.log(resData);
 
-            if(resData.data) {
-                Object.entries(resData.data).forEach(([checkboxId, checked]) => {
-                    const checkbox = document.getElementById(checkboxId);
 
-                    if(checkbox) {
-                        checkbox.checked = checked === "1";
-                    }
-                });
+            if (resData.data) {
+
+                Object.entries(resData.data)
+                    .forEach(
+                        ([checkboxId, checked]) => {
+
+                            const checkbox =
+                                document.getElementById(
+                                    checkboxId
+                                );
+
+
+                            if (checkbox) {
+
+                                checkbox.checked =
+                                    checked === "1";
+
+                            }
+
+                        }
+                    );
+
             }
-        })
 
-        const socket = io();
-
-        socket.on("connect", () => {
-            console.log("SOCKET CONNECTED:", socket.id);
-        });
-        
-        socket.on("connect_error", (error) => {
-            console.error("SOCKET CONNECTION ERROR:", error.message);
-        });
-
-
-        const checkboxGrid = document.getElementById("checkboxGrid");
-
-        for (let i = 1; i <= 600; i++) {
-            const label = document.createElement("label");
-            label.className = "connection";
-
-            const checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.className = "connection-checkbox";
-            checkbox.id = `checkbox-${i}`;
-
-            //! Checkbox event emit
-            checkbox.addEventListener("change", (e) => {
-                // console.log(`ID: ${e.target.id} CHECKED: ${e.target.checked}`);
-                socket.emit("client:checkbox:change", { id: e.target.id, checked: e.target.checked });
-            });
-
-            const number = document.createElement("span");
-            number.className = "connection-number";
-            number.textContent = String(i).padStart(3, "0");
-
-            label.appendChild(checkbox);
-            label.appendChild(number);
-
-            checkboxGrid.appendChild(label);
         }
-
-        socket.on("server:checkbox:change", (data) => {
-            const checkbox = document.getElementById(data.id);
-
-            if(checkbox) {
-                checkbox.checked = data.checked;
-            }
-        });
-
-        socket.on("error", (data) => {
-            //! TODO: create an error notification alert
-        });
-    </script>
-
-    <script>
-        
+    );
 
     </script>
 

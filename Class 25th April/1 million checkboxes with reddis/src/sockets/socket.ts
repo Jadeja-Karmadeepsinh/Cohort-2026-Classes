@@ -81,6 +81,7 @@ export function setupSocketIO(server: HTTPServer) {
                 const allowed = await checkSocketRateLimit(userId);
 
                 if(!allowed) {
+                    console.log("Too many checkbox updates. Try again later.")
                     socket.emit("error", {
                         message: "Too many checkbox updates. Try again later."
                     });

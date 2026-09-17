@@ -107,4 +107,18 @@ export class AuthController {
             next(error);
         }
     }
+
+    static async getCurrentUser(
+        req: Request,
+        res: Response,
+        next: NextFunction
+    ): Promise<void> {
+        if(req.user?.userId) {
+            ApiResponse.ok(res, "User logged in", {
+                "authenticated": true
+            })
+        }else {
+            throw ApiError.unauthorized("User not authorized");
+        }
+    }
 }
