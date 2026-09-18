@@ -34,7 +34,8 @@
             const { id, latitude, longitude } = data;
 
             if(!remoteMarkers.has(id)) {
-                const marker = L.marker([latitude, longitude]).addTo(map).bindPopup(`You are here id: ${id}`);
+                const marker = L.marker([latitude, longitude]);
+                marker.addTo(map).bindPopup(`You are here id: ${id}`);
                 remoteMarkers.set(id, marker);
             }else {
                 const exsistingMarker = remoteMarkers.get(id);
@@ -79,9 +80,8 @@
                 socket.emit("client:location:update", { latitude, longitude });
 
                 if(!myCurrentLocationMarker) {
-                    myCurrentLocationMarker = L.marker([latitude, longitude])
-                        .addTo(map)
-                        .bindPopup("You are here");
+                    myCurrentLocationMarker = L.marker([latitude, longitude]);
+                    myCurrentLocationMarker.addTo(map).bindPopup("You are here");
                 }else {
                     myCurrentLocationMarker.setLatLng([latitude, longitude]);
                 }
