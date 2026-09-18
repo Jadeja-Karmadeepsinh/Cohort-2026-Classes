@@ -1,0 +1,1586 @@
+Absolutely. Since your class is moving from Redis/Pub-Sub into **Kafka + high-throughput systems**, the best thing is to build the mental model **before touching Kafka code**.
+
+And because you're learning this as a developer rather than preparing for an interview, I'm going to explain it from **"why the hell do we need this?" → "what problem does Kafka solve?" → "how Kafka works" → "terms you'll hear in class" → "how it differs from Redis"**.
+
+---
+
+# 1. First: What the hell is a "high-throughput system"?
+
+Forget Kafka for a minute.
+
+Suppose you have a server:
+
+```text
+Client
+   ↓
+Server
+   ↓
+Database
+```
+
+A user sends:
+
+```text
+POST /order
+```
+
+Your server processes it.
+
+Easy.
+
+Now imagine:
+
+```text
+1 request/sec
+```
+
+No problem.
+
+Then:
+
+```text
+100 requests/sec
+```
+
+Still probably fine.
+
+Then:
+
+```text
+10,000 requests/sec
+```
+
+Now things become interesting.
+
+Then:
+
+```text
+100,000 requests/sec
+```
+
+Now you have a **high-throughput system**.
+
+---
+
+# 2. What does throughput actually mean?
+
+Throughput basically means:
+
+> **How much work can a system process per unit of time?**
+
+Usually:
+
+```text
+requests/second
+messages/second
+events/second
+transactions/second
+```
+
+For example:
+
+```text
+Server A → 100 requests/sec
+Server B → 10,000 requests/sec
+```
+
+Server B has higher throughput.
+
+---
+
+# 3. Throughput ≠ speed
+
+This distinction is VERY important.
+
+Imagine a restaurant.
+
+One chef can make:
+
+```text
+1 burger in 1 minute
+```
+
+So:
+
+```text
+latency = 1 minute
+```
+
+But if you have:
+
+```text
+100 chefs
+```
+
+you can produce many burgers simultaneously.
+
+That's **throughput**.
+
+So:
+
+### Latency
+
+> How long does ONE operation take?
+
+### Throughput
+
+> How MANY operations can we process in a given time?
+
+A system can have:
+
+```text
+low latency + high throughput
+```
+
+but they're different concepts.
+
+---
+
+# 4. Why do normal servers eventually struggle?
+
+Imagine this architecture:
+
+```text
+10,000 users
+      ↓
+     API
+      ↓
+   Database
+```
+
+Every request might do:
+
+```text
+request
+   ↓
+validate
+   ↓
+database
+   ↓
+some calculation
+   ↓
+send email
+   ↓
+update analytics
+   ↓
+response
+```
+
+The problem is that the API server is doing **everything synchronously**.
+
+For example:
+
+```text
+User
+ ↓
+Create Order
+ ↓
+API
+ ↓
+Database
+ ↓
+Payment
+ ↓
+Email
+ ↓
+Analytics
+ ↓
+Response
+```
+
+The user may only care about:
+
+> "Was my order created?"
+
+But your server is doing five other things before responding.
+
+---
+
+# 5. The first important idea: asynchronous processing
+
+Instead of:
+
+```text
+User
+ ↓
+API
+ ↓
+Database
+ ↓
+Email
+ ↓
+Analytics
+ ↓
+Notifications
+ ↓
+Response
+```
+
+we can do:
+
+```text
+                 ┌→ Email service
+                 │
+User → API → Queue
+                 │
+                 ├→ Analytics
+                 │
+                 └→ Notification service
+```
+
+The API says:
+
+> "I've received this event. Someone else can process the rest."
+
+That's where **message brokers** become useful.
+
+---
+
+# 6. What's a message broker?
+
+A message broker sits between producers and consumers.
+
+```text
+Producer
+    ↓
+  Broker
+    ↓
+Consumer
+```
+
+Producer:
+
+> "Here's some work."
+
+Broker:
+
+> "I'll hold it."
+
+Consumer:
+
+> "I'll process it."
+
+Examples include:
+
+* Kafka
+* RabbitMQ
+* Apache Pulsar
+* Redis Streams
+
+And this brings us to Kafka.
+
+---
+
+# 7. So what exactly is Kafka?
+
+**Apache Kafka is a distributed event streaming platform.**
+
+Don't worry about the fancy definition yet.
+
+Think:
+
+> **Kafka is a highly scalable system for storing and distributing streams of events/messages between producers and consumers.**
+
+At the simplest level:
+
+```text
+Producer
+    ↓
+  Kafka
+    ↓
+Consumer
+```
+
+Example:
+
+```text
+Order Service
+     ↓
+   Kafka
+     ↓
+ ┌───┼────────┐
+ ↓   ↓        ↓
+Email Analytics Inventory
+```
+
+One order event can be consumed by multiple independent services.
+
+---
+
+# 8. Real-world example
+
+Suppose Amazon receives:
+
+```text
+ORDER_CREATED
+```
+
+There could be multiple things interested in that event:
+
+```text
+ORDER_CREATED
+      ↓
+    Kafka
+      ↓
+ ┌────┼───────┬────────┐
+ ↓    ↓       ↓        ↓
+Email Inventory Payment Analytics
+```
+
+The Order Service doesn't need to directly call all four services.
+
+Instead:
+
+```text
+Order Service
+     ↓
+Kafka
+```
+
+And each service consumes the event.
+
+---
+
+# 9. Why not just use HTTP?
+
+You might ask:
+
+> Why don't I just do this?
+
+```text
+Order Service
+   ↓ HTTP
+Email Service
+
+Order Service
+   ↓ HTTP
+Inventory Service
+
+Order Service
+   ↓ HTTP
+Analytics Service
+```
+
+You can.
+
+But now your Order Service is tightly connected to everything.
+
+If Analytics is down:
+
+```text
+Order Service
+      ↓
+Analytics ❌
+```
+
+What happens?
+
+You have to decide:
+
+* retry?
+* wait?
+* fail the order?
+* ignore analytics?
+
+And at huge scale, this gets messy.
+
+Kafka gives you a buffer.
+
+```text
+Order Service
+     ↓
+   Kafka
+     ↓
+Analytics
+```
+
+If Analytics temporarily dies:
+
+```text
+Order Service
+     ↓
+   Kafka
+     ↓
+Analytics ❌
+```
+
+The event can remain in Kafka until Analytics comes back and processes it.
+
+That's a major concept.
+
+---
+
+# 10. Kafka isn't just a queue
+
+This is where Kafka differs significantly from something like a traditional queue.
+
+Kafka stores events in an **append-only log**.
+
+Imagine:
+
+```text
+Topic: orders
+
+Offset
+  0     ORDER_CREATED
+  1     ORDER_CREATED
+  2     ORDER_CANCELLED
+  3     ORDER_CREATED
+  4     ORDER_SHIPPED
+```
+
+Those events are stored.
+
+Consumers keep track of where they are.
+
+For example:
+
+```text
+Email Consumer
+currently at offset 3
+
+Analytics Consumer
+currently at offset 1
+```
+
+They can consume independently.
+
+---
+
+# 11. The most important Kafka concept: Topic
+
+You'll hear **topic** constantly.
+
+A topic is basically a named stream/category of events.
+
+For example:
+
+```text
+orders
+payments
+users
+notifications
+logs
+```
+
+You might have:
+
+```text
+Topic: orders
+```
+
+and put events into it:
+
+```text
+ORDER_CREATED
+ORDER_CREATED
+ORDER_CANCELLED
+ORDER_SHIPPED
+```
+
+Think:
+
+> Topic = a named stream of messages.
+
+---
+
+# 12. Producer
+
+A **producer** sends messages to Kafka.
+
+```text
+Producer
+    ↓
+ Kafka
+```
+
+Example:
+
+```text
+Order Service
+```
+
+produces:
+
+```json
+{
+    "orderId": "123",
+    "userId": "456",
+    "event": "ORDER_CREATED"
+}
+```
+
+into:
+
+```text
+orders
+```
+
+---
+
+# 13. Consumer
+
+A **consumer** reads messages from Kafka.
+
+```text
+Kafka
+  ↓
+Consumer
+```
+
+For example:
+
+```text
+Email Service
+```
+
+consumes:
+
+```text
+orders
+```
+
+and sends an email.
+
+---
+
+# 14. Consumer Group
+
+This is one of the most important things you'll learn.
+
+Imagine:
+
+```text
+orders
+   ↓
+Consumer Group: email-service
+```
+
+Inside that group you have:
+
+```text
+Consumer 1
+Consumer 2
+Consumer 3
+```
+
+Kafka can distribute work between them.
+
+So instead of one consumer processing:
+
+```text
+30,000 messages/sec
+```
+
+you can have:
+
+```text
+Consumer 1 → 10,000
+Consumer 2 → 10,000
+Consumer 3 → 10,000
+```
+
+That's one of the reasons Kafka can scale.
+
+---
+
+# 15. Partitions
+
+Now we're getting into the important stuff.
+
+A Kafka topic can be divided into **partitions**.
+
+For example:
+
+```text
+orders
+│
+├── Partition 0
+├── Partition 1
+├── Partition 2
+└── Partition 3
+```
+
+Each partition is basically an ordered log.
+
+For example:
+
+```text
+Partition 0
+
+0 → Order A
+1 → Order B
+2 → Order C
+3 → Order D
+```
+
+Kafka assigns each message an **offset**.
+
+---
+
+# 16. Why partitions?
+
+Because they allow parallelism.
+
+Imagine one giant topic:
+
+```text
+orders
+   ↓
+ONE processing pipeline
+```
+
+Hard to scale.
+
+Instead:
+
+```text
+orders
+ ├── P0 ──→ Consumer
+ ├── P1 ──→ Consumer
+ ├── P2 ──→ Consumer
+ └── P3 ──→ Consumer
+```
+
+Now multiple consumers can process different partitions simultaneously.
+
+This is one of the fundamental ideas behind Kafka's throughput.
+
+---
+
+# 17. Here's the important relationship
+
+Remember this:
+
+```text
+Topic
+  ↓
+Partitions
+  ↓
+Consumer Group
+  ↓
+Consumers
+```
+
+For example:
+
+```text
+                 orders topic
+                /     |     \
+              P0      P1     P2
+               ↓       ↓      ↓
+              C1      C2     C3
+```
+
+Three partitions can be processed by three consumers in parallel.
+
+---
+
+# 18. But there's a rule
+
+Within **one consumer group**:
+
+> A partition can be assigned to only one consumer at a time.
+
+Example:
+
+```text
+3 partitions
+3 consumers
+
+P0 → C1
+P1 → C2
+P2 → C3
+```
+
+Good.
+
+But:
+
+```text
+3 partitions
+5 consumers
+```
+
+Then:
+
+```text
+P0 → C1
+P1 → C2
+P2 → C3
+
+C4 → nothing
+C5 → nothing
+```
+
+You can't magically get five-way parallelism from three partitions.
+
+That's why **partition count affects scalability**.
+
+---
+
+# 19. Multiple consumer groups are different
+
+Suppose:
+
+```text
+orders topic
+```
+
+has:
+
+```text
+Email Service
+Analytics Service
+Inventory Service
+```
+
+You don't necessarily want them competing for the same messages.
+
+So each gets its own consumer group:
+
+```text
+                 orders
+                   ↓
+        ┌──────────┼──────────┐
+        ↓          ↓          ↓
+    email-group analytics  inventory
+        ↓          ↓          ↓
+      Email     Analytics   Inventory
+```
+
+Each group gets the events independently.
+
+This is incredibly useful.
+
+---
+
+# 20. Kafka's big superpower: decoupling
+
+Without Kafka:
+
+```text
+Order Service
+ ├──→ Email
+ ├──→ Inventory
+ ├──→ Analytics
+ └──→ Notification
+```
+
+With Kafka:
+
+```text
+                 Kafka
+                   ↑
+                   │
+              Order Service
+                   │
+          ORDER_CREATED event
+                   │
+       ┌───────────┼───────────┐
+       ↓           ↓           ↓
+     Email      Inventory   Analytics
+```
+
+Order Service doesn't need to know exactly who consumes the event.
+
+That's **decoupling**.
+
+---
+
+# 21. Why Kafka is useful for high throughput
+
+Now connect everything together.
+
+Suppose you're receiving:
+
+```text
+100,000 events/sec
+```
+
+Kafka can:
+
+### 1. Partition the workload
+
+```text
+100k events/sec
+
+↓
+P0
+P1
+P2
+P3
+...
+P20
+```
+
+### 2. Process in parallel
+
+```text
+P0 → Consumer
+P1 → Consumer
+P2 → Consumer
+...
+```
+
+### 3. Buffer traffic
+
+Suppose traffic suddenly jumps:
+
+```text
+Normal: 50k/sec
+
+Spike:
+500k/sec
+```
+
+Consumers may not immediately process all 500k.
+
+Kafka can retain the events while consumers catch up.
+
+Conceptually:
+
+```text
+Producers
+   ↓
+Kafka
+████████████████████
+        ↓
+    Consumers
+```
+
+That buffer is extremely valuable.
+
+---
+
+# 22. Kafka vs Redis Pub/Sub
+
+This is especially important for **you**, because you've just built Redis Pub/Sub.
+
+Your current project:
+
+```text
+Server A
+   ↓
+Redis Pub/Sub
+   ↓
+Server B
+```
+
+Redis Pub/Sub is basically:
+
+> "Publish this message to whoever is listening right now."
+
+If nobody is listening when the message is published, the message is generally gone.
+
+Kafka is different:
+
+```text
+Producer
+   ↓
+Kafka
+   ↓
+Message stored
+   ↓
+Consumer reads it
+```
+
+The consumer has a position/offset.
+
+So Kafka is much more suitable when you need:
+
+* durable event streams
+* replay
+* large-scale processing
+* multiple independent consumers
+* partition-based parallelism
+* high throughput
+
+---
+
+# 23. Redis Pub/Sub mental model
+
+Think of a live radio broadcast.
+
+```text
+Radio station
+     ↓
+Listeners
+```
+
+If you turn the radio on five minutes late:
+
+> You missed the previous five minutes.
+
+That's roughly the mental model for Redis Pub/Sub.
+
+---
+
+# 24. Kafka mental model
+
+Kafka is more like a recorded broadcast.
+
+```text
+Producer
+   ↓
+██████████████████
+Stored event log
+   ↓
+Consumer
+```
+
+If the consumer was down:
+
+```text
+Kafka
+██████████████████
+        ↓
+Consumer comes back
+        ↓
+continues reading
+```
+
+It can process events it missed.
+
+---
+
+# 25. What is an offset?
+
+You'll hear this constantly.
+
+Suppose:
+
+```text
+Partition 0
+
+Offset    Event
+0         A
+1         B
+2         C
+3         D
+4         E
+```
+
+A consumer has processed:
+
+```text
+0
+1
+2
+```
+
+Its position is around:
+
+```text
+3
+```
+
+When it comes back, it knows where to continue.
+
+That's an **offset**.
+
+Think:
+
+> Offset = position of a message inside a partition.
+
+---
+
+# 26. Kafka doesn't delete a message when a consumer reads it
+
+This is a BIG difference from traditional queues.
+
+Suppose:
+
+```text
+Kafka
+
+0 A
+1 B
+2 C
+3 D
+```
+
+Consumer A reads:
+
+```text
+A B C
+```
+
+The messages don't disappear just because Consumer A read them.
+
+Another consumer/group can read them too.
+
+```text
+Consumer Group A
+→ A B C
+
+Consumer Group B
+→ A B C
+```
+
+That's why Kafka is so useful for event streaming.
+
+---
+
+# 27. Retention
+
+Kafka stores messages for a configured period/size.
+
+For example, conceptually:
+
+```text
+retain for 7 days
+```
+
+Then old messages can be removed according to retention policy.
+
+This allows replay.
+
+For example:
+
+```text
+Analytics service broke yesterday.
+
+Fix it.
+
+Start consuming yesterday's events again.
+```
+
+That's a very powerful capability.
+
+---
+
+# 28. Kafka architecture
+
+At a high level:
+
+```text
+                 Kafka Cluster
+
+        ┌──────────────────────────┐
+        │                          │
+Producer│  Broker 1                │
+   ───────→                       │
+        │  Broker 2                │
+        │                          │
+        │  Broker 3                │
+        │                          │
+        └──────────────────────────┘
+                   ↓
+               Consumers
+```
+
+Kafka usually runs as a **cluster**.
+
+A cluster consists of multiple Kafka brokers.
+
+---
+
+# 29. What's a broker?
+
+A broker is basically:
+
+> A Kafka server.
+
+So:
+
+```text
+Kafka cluster
+
+Broker 1
+Broker 2
+Broker 3
+```
+
+Together they form the Kafka cluster.
+
+They store/manage partitions.
+
+---
+
+# 30. Replication
+
+Now suppose:
+
+```text
+Partition 0
+```
+
+is stored on Broker 1.
+
+What if Broker 1 dies?
+
+That's bad.
+
+Kafka can replicate partitions.
+
+Conceptually:
+
+```text
+P0
+├── Broker 1 → primary
+├── Broker 2 → replica
+└── Broker 3 → replica
+```
+
+So the system can survive failures better.
+
+You'll hear:
+
+> replication factor
+
+For example:
+
+```text
+replication factor = 3
+```
+
+means there are three copies/replicas of a partition.
+
+---
+
+# 31. Leader and followers
+
+For a partition:
+
+```text
+P0
+
+Broker 1 → Leader
+Broker 2 → Follower
+Broker 3 → Follower
+```
+
+The leader handles writes and normally serves reads, while followers replicate the data.
+
+If the leader fails, Kafka can elect another replica.
+
+Don't worry about the exact internals yet. Just remember:
+
+```text
+Partition
+   ↓
+Leader + replicas
+```
+
+---
+
+# 32. Why Kafka can handle huge workloads
+
+The basic formula is:
+
+```text
+Partitions
+     +
+Parallel consumers
+     +
+Distributed brokers
+     +
+Sequential append/log design
+     +
+Batching
+     +
+Efficient networking
+     +
+Replication
+```
+
+This is why Kafka can process enormous event streams.
+
+Don't memorize this as "Kafka is fast because magic."
+
+It's fast because its architecture is designed around **sequential writes + partitioning + parallelism + batching + distributed storage**.
+
+---
+
+# 33. Batching
+
+Another word you'll hear.
+
+Instead of:
+
+```text
+send message
+send message
+send message
+send message
+```
+
+Kafka can work with batches:
+
+```text
+┌─────────────────────────┐
+│ msg1 msg2 msg3 msg4 ... │
+└─────────────────────────┘
+              ↓
+            Kafka
+```
+
+Fewer network operations generally means better throughput.
+
+---
+
+# 34. One VERY important concept: ordering
+
+Kafka guarantees ordering **within a partition**.
+
+Example:
+
+```text
+Partition 0
+
+1 → A
+2 → B
+3 → C
+4 → D
+```
+
+The order is maintained.
+
+But across multiple partitions:
+
+```text
+P0 → A B C
+P1 → X Y Z
+```
+
+Kafka doesn't give you one global ordering across both partitions.
+
+So:
+
+> **Ordering is per partition.**
+
+This becomes important when designing systems.
+
+---
+
+# 35. Keys
+
+You may eventually see:
+
+```ts
+producer.send({
+    topic: "orders",
+    messages: [
+        {
+            key: "user-123",
+            value: JSON.stringify(order)
+        }
+    ]
+});
+```
+
+Why `key`?
+
+Kafka can use the key to determine which partition receives the message.
+
+For example:
+
+```text
+user-123 → Partition 2
+user-123 → Partition 2
+user-123 → Partition 2
+```
+
+Therefore events for the same user can remain ordered.
+
+Conceptually:
+
+```text
+same key
+   ↓
+same partition
+   ↓
+preserved order
+```
+
+---
+
+# 36. Now imagine your checkbox project
+
+Your current project is basically:
+
+```text
+Browser
+   ↓
+Socket.IO
+   ↓
+Node server
+   ↓
+Redis
+```
+
+Imagine instead a high-throughput event system:
+
+```text
+Millions of events
+       ↓
+    Kafka
+       ↓
+ ┌─────┼────────┐
+ ↓     ↓        ↓
+Worker Worker   Worker
+```
+
+If you're processing:
+
+```text
+1,000,000 events
+```
+
+you can partition them:
+
+```text
+P0
+P1
+P2
+...
+P99
+```
+
+and have workers processing those partitions concurrently.
+
+That's the kind of architecture your class is moving toward.
+
+---
+
+# 37. Kafka terminology cheat sheet
+
+Keep this beside you during class:
+
+| Term               | Simple meaning                       |
+| ------------------ | ------------------------------------ |
+| **Kafka**          | Distributed event streaming platform |
+| **Broker**         | Kafka server                         |
+| **Cluster**        | Group of Kafka brokers               |
+| **Topic**          | Named stream/category of events      |
+| **Partition**      | Ordered log inside a topic           |
+| **Offset**         | Position of a message in a partition |
+| **Producer**       | Sends messages                       |
+| **Consumer**       | Reads messages                       |
+| **Consumer Group** | Consumers working together           |
+| **Key**            | Helps determine partition            |
+| **Replication**    | Keeping copies of partitions         |
+| **Retention**      | How long Kafka keeps messages        |
+| **Leader**         | Main replica for a partition         |
+| **Follower**       | Replica copying the leader           |
+
+---
+
+# 38. The architecture you should have in your head
+
+If your teacher says:
+
+> "Kafka topic with three partitions and two consumers in a consumer group"
+
+you should immediately visualize:
+
+```text
+                 TOPIC
+                   │
+        ┌──────────┼──────────┐
+        ↓          ↓          ↓
+       P0         P1         P2
+        │          │          │
+        └────┬─────┘          │
+             ↓                ↓
+          Consumer 1       Consumer 2
+             │                │
+             └──── consumer group ────┘
+```
+
+And understand:
+
+* 3 partitions = potential parallelism of 3
+* 2 consumers = two workers
+* one consumer can own multiple partitions
+* each partition belongs to only one consumer in that group at a time
+
+---
+
+# 39. The most important mental model
+
+If you remember **only this** before your class:
+
+```text
+                 PRODUCER
+                    │
+                    │
+                    ▼
+              ┌───────────┐
+              │   TOPIC   │
+              │           │
+              │ P0 P1 P2  │
+              └───────────┘
+                 │ │ │
+                 ▼ ▼ ▼
+              CONSUMERS
+                 │
+                 ▼
+              SERVICES
+```
+
+And:
+
+```text
+Topic
+ ↓
+Partitions
+ ↓
+Parallel processing
+ ↓
+Consumer groups
+```
+
+That's the foundation.
+
+---
+
+# 40. And here's where Redis fits
+
+Since you've just learned Redis, don't throw that knowledge away.
+
+Think of the technologies as different tools:
+
+```text
+Redis
+│
+├── Cache
+├── Fast key-value storage
+├── Pub/Sub
+├── Distributed locks
+├── Rate limiting
+└── Streams
+
+Kafka
+│
+├── Event streaming
+├── Durable event log
+├── Huge event volumes
+├── Replay
+├── Partitioning
+├── Consumer groups
+└── Distributed processing
+```
+
+They're **not simply "Redis vs Kafka, Kafka is better."**
+
+The workload determines what makes sense.
+
+---
+
+# 41. What your next class will probably start throwing at you
+
+Don't worry if these words appear:
+
+```text
+Kafka
+KafkaJS
+Broker
+Topic
+Partition
+Offset
+Producer
+Consumer
+Consumer Group
+Replication
+Leader
+Follower
+ISR
+Key
+Retention
+Acknowledgement
+Batch
+Lag
+Rebalance
+Exactly-once
+At-least-once
+At-most-once
+Idempotency
+```
+
+You don't need to know all of them right now.
+
+The ones I would make sure you understand **before class** are:
+
+### Tier 1 — absolutely understand
+
+```text
+Producer
+Consumer
+Topic
+Partition
+Offset
+Consumer Group
+Broker
+```
+
+### Tier 2 — understand shortly after
+
+```text
+Key
+Replication
+Leader/Follower
+Retention
+Consumer lag
+Acknowledgement
+Rebalancing
+```
+
+### Tier 3 — class will probably explain later
+
+```text
+ISR
+Exactly-once
+At-least-once
+Idempotency
+Transactions
+Compaction
+Partition assignment
+```
+
+---
+
+## Your learning path from here
+
+I would **not** jump directly into installing Kafka.
+
+Do this mentally first:
+
+```text
+1. What is throughput?
+        ↓
+2. Why synchronous systems struggle?
+        ↓
+3. What is asynchronous processing?
+        ↓
+4. What is a message broker?
+        ↓
+5. Why Kafka?
+        ↓
+6. Producer / Consumer
+        ↓
+7. Topic
+        ↓
+8. Partition
+        ↓
+9. Offset
+        ↓
+10. Consumer Group
+        ↓
+11. Scaling with partitions
+        ↓
+12. Replication & fault tolerance
+        ↓
+13. Kafka vs Redis
+        ↓
+14. THEN write Kafka code
+```
+
+**The biggest thing I want you to avoid:** memorizing Kafka terminology without understanding the problem it's solving.
+
+If you understand:
+
+> **"I have a massive stream of events. I need to accept them quickly, store them reliably, distribute them to multiple independent consumers, process them in parallel, survive failures, and potentially replay them later."**
+
+then Kafka starts making sense instead of looking like 50 random new words.
