@@ -15,6 +15,6 @@ router.post('/register', authRateLimiter, AuthController.register);
 router.post('/login', authRateLimiter, AuthController.login);
 // router.post('/refresh', AuthController.refresh); //! Not working yet
 // router.post('/logout', AuthController.logout); //! Not working yet
-router.get('/me', AuthController.getCurrentUser);
+router.get('/me', requireAuth, AuthController.getCurrentUser);
 
 export const authRoutes = router;
