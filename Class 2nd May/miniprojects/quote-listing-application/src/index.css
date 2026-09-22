@@ -1,4 +1,12 @@
-:root {
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+
   font-family:
     Inter,
     ui-sans-serif,
@@ -8,67 +16,47 @@
     "Segoe UI",
     sans-serif;
 
-  color: #181714;
-  background: #eee7d8;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  background: #171612;
 
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
-
 
 * {
   box-sizing: border-box;
 }
 
-
-html {
-  min-width: 320px;
-  min-height: 100%;
-
-  background: #eee7d8;
-
-  scroll-behavior: smooth;
-}
-
-
-body {
-  margin: 0;
-
-  min-width: 320px;
-  min-height: 100vh;
-
-  background: #eee7d8;
-}
-
-
 button,
-input {
-  font: inherit;
+input,
+select {
+  font-family: inherit;
 }
-
 
 button:focus-visible,
-input:focus-visible {
-  outline: 2px solid #68705a;
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #b28a4a;
   outline-offset: 3px;
 }
 
-
-button {
-  -webkit-tap-highlight-color: transparent;
-}
-
-
 ::selection {
-  background: #a47b3c;
-  color: #f6f1e7;
+  background: #a7643d;
+  color: #fff8e9;
 }
 
+::-webkit-scrollbar {
+  width: 8px;
+}
 
-#root {
-  width: 100%;
-  min-height: 100vh;
+::-webkit-scrollbar-track {
+  background: #171612;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4c4438;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #75634b;
 }

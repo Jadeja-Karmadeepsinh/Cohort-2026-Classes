@@ -11,258 +11,135 @@ export type Quote = {
 
 type QuoteCardProps = {
   quote: Quote
-  index: number
+  number: number
   isFavorite: boolean
-  onToggleFavorite: (id: number) => void
+  isCopied: boolean
   onCopy: (quote: Quote) => void
+  onToggleFavorite: (id: number) => void
+  onFocus: (quote: Quote) => void
+  onTagClick: (tag: string) => void
 }
 
 function formatDate(date: string) {
-  const parsedDate = new Date(date)
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return date
-  }
-
-  return new Intl.DateTimeFormat('en', {
-    day: '2-digit',
+  return new Intl.DateTimeFormat('en-US', {
     month: 'short',
+    day: 'numeric',
     year: 'numeric',
-  }).format(parsedDate)
+  }).format(new Date(date))
 }
 
-function getReadingTime(length: number) {
-  if (length < 70) {
-    return 'Quick read'
-  }
-
-  if (length < 110) {
-    return 'Short read'
-  }
-
-  return 'Long read'
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .map((word) => word[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
 }
 
 function QuoteCard({
   quote,
-  index,
+  number,
   isFavorite,
-  onToggleFavorite,
+  isCopied,
   onCopy,
+  onToggleFavorite,
+  onFocus,
+  onTagClick,
 }: QuoteCardProps) {
   return (
-    <article className="quote-card">
-
-      {/* =====================================
-          CARD HEADER
-      ====================================== */}
-
-      <div className="quote-card-header">
-
-        <div className="quote-number">
-          <span>
-            {String(index + 1).padStart(2, '0')}
-          </span>
-
-          <i />
-
-          <span>
-            ID {quote.id}
-          </span>
-        </div>
-
+    <article className="quote-entry">
+      <div className="quote-entry-top">
+        <span className="quote-number">
+          {String(number).padStart(2, '0')}
+        </span>
 
         <button
           className={`favorite-button ${
-            isFavorite
-              ? 'favorite-active'
-              : ''
+            isFavorite ? 'is-favorite' : ''
           }`}
-          onClick={() =>
-            onToggleFavorite(quote.id)
-          }
+          onClick={() => onToggleFavorite(quote.id)}
           aria-label={
             isFavorite
-              ? 'Remove quote from favorites'
-              : 'Save quote to favorites'
+              ? 'Remove from favorites'
+              : 'Add to favorites'
           }
           title={
             isFavorite
-              ? 'Remove from favorites'
-              : 'Save quote'
+              ? 'Remove favorite'
+              : 'Add favorite'
           }
         >
-          {isFavorite ? '♥' : '♡'}
+          {isFavorite ? '★' : '☆'}
         </button>
-
       </div>
 
+      <button
+        className="quote-content-button"
+        onClick={() => onFocus(quote)}
+        title="Open quote"
+      >
+        <span className="mini-quote-mark">“</span>
 
-      {/* =====================================
-          QUOTE
-      ====================================== */}
+        <p className="quote-content">{quote.content}</p>
+      </button>
 
-      <div className="quote-body">
-
-        <div className="quote-symbol">
-          “
+      <div className="quote-author-row">
+        <div className="author-monogram">
+          {getInitials(quote.author)}
         </div>
 
-        <p>
-          {quote.content}
-        </p>
-
+        <div className="author-details">
+          <strong>{quote.author}</strong>
+          <span>@{quote.authorSlug}</span>
+        </div>
       </div>
-
-
-      {/* =====================================
-          AUTHOR
-      ====================================== */}
-
-      <div className="quote-author">
-
-        <div className="author-avatar">
-          {quote.author.charAt(0)}
-        </div>
-
-        <div className="author-information">
-
-          <strong>
-            {quote.author}
-          </strong>
-
-          <span>
-            @{quote.authorSlug}
-          </span>
-
-        </div>
-
-      </div>
-
-
-      {/* =====================================
-          TAGS
-      ====================================== */}
 
       <div className="quote-tags">
-
         {quote.tags.length > 0 ? (
           quote.tags.map((tag) => (
-            <span
+            <button
               key={tag}
               className="quote-tag"
+              onClick={() => onTagClick(tag)}
             >
-              {tag}
-            </span>
+              #{tag}
+            </button>
           ))
         ) : (
-          <span className="untagged">
-            UNTAGGED
-          </span>
+          <span className="no-tags">No tags</span>
         )}
-
       </div>
 
+      <div className="quote-meta">
+        <span>{quote.length} characters</span>
 
-      {/* =====================================
-          METADATA
-      ====================================== */}
+        <span>
+          Added {formatDate(quote.dateAdded)}
+        </span>
 
-      <div className="quote-information">
+        <span>
+          Updated {formatDate(quote.dateModified)}
+        </span>
 
-        <div className="information-item">
-
-          <span>LENGTH</span>
-
-          <strong>
-            {quote.length} chars
-          </strong>
-
-        </div>
-
-
-        <div className="information-item">
-
-          <span>READ</span>
-
-          <strong>
-            {getReadingTime(
-              quote.length,
-            )}
-          </strong>
-
-        </div>
-
-
-        <div className="information-item">
-
-          <span>ADDED</span>
-
-          <strong>
-            {formatDate(
-              quote.dateAdded,
-            )}
-          </strong>
-
-        </div>
-
-
-        <div className="information-item">
-
-          <span>UPDATED</span>
-
-          <strong>
-            {formatDate(
-              quote.dateModified,
-            )}
-          </strong>
-
-        </div>
-
+        <span>ID #{quote.id}</span>
       </div>
-
-
-      {/* =====================================
-          ACTIONS
-      ====================================== */}
 
       <div className="quote-actions">
-
         <button
-          className="quote-action"
-          onClick={() =>
-            onCopy(quote)
-          }
+          className="paper-button"
+          onClick={() => onCopy(quote)}
         >
-          <span>▣</span>
-          Copy
+          {isCopied ? '✓ Copied' : 'Copy quote'}
         </button>
 
         <button
-          className={`quote-action ${
-            isFavorite
-              ? 'action-favorite'
-              : ''
-          }`}
-          onClick={() =>
-            onToggleFavorite(
-              quote.id,
-            )
-          }
+          className="focus-button"
+          onClick={() => onFocus(quote)}
         >
-          <span>
-            {isFavorite
-              ? '♥'
-              : '♡'}
-          </span>
-
-          {isFavorite
-            ? 'Saved'
-            : 'Save'}
+          Read full quote ↗
         </button>
-
       </div>
-
     </article>
   )
 }

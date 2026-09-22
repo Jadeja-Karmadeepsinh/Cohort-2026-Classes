@@ -1,12 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import QuoteCard, { type Quote } from './components/QuoteCard'
 
-const API_URL =
-  'https://api.freeapi.app/api/v1/public/quotes'
+type SortOption = 'default' | 'shortest' | 'longest' | 'author'
 
 type ApiResponse = {
-  statusCode: number
   data: {
     page: number
     limit: number
@@ -17,159 +15,214 @@ type ApiResponse = {
     currentPageItems: number
     data: Quote[]
   }
-  message: string
-  success: boolean
 }
+
+const API_URL = 'https://api.freeapi.app/api/v1/public/quotes'
+
+const QUOTES_PER_PHYSICAL_PAGE = 3
+const QUOTES_PER_SPREAD = 6
 
 function App() {
   const [quotes, setQuotes] = useState<Quote[]>([])
-
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalItems, setTotalItems] = useState(0)
-
-  const [search, setSearch] = useState('')
-  const [selectedTag, setSelectedTag] = useState('All')
+  const [bookPage, setBookPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(50)
+  const [totalItems, setTotalItems] = useState(300)
 
   const [loading, setLoading] = useState(true)
+  const [pageLoading, setPageLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const [reloadKey, setReloadKey] = useState(0)
+  const [search, setSearch] = useState('')
+  const [selectedAuthor, setSelectedAuthor] = useState('all')
+  const [selectedTag, setSelectedTag] = useState('all')
+  const [sortBy, setSortBy] = useState<SortOption>('default')
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
 
   const [favorites, setFavorites] = useState<number[]>(() => {
     try {
-      const saved = localStorage.getItem('quote-favorites')
-
+      const saved = localStorage.getItem('quote-book-favorites')
       return saved ? JSON.parse(saved) : []
     } catch {
       return []
     }
   })
 
-  const [randomQuote, setRandomQuote] =
-    useState<Quote | null>(null)
+  const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [focusedQuote, setFocusedQuote] = useState<Quote | null>(null)
+
+  const [turning, setTurning] = useState<'next' | 'previous' | null>(
+    null,
+  )
+
+  const [pageCache, setPageCache] = useState<Record<number, Quote[]>>({})
+
+  const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
+
+  useEffect(() => {
+    localStorage.setItem(
+      'quote-book-favorites',
+      JSON.stringify(favorites),
+    )
+  }, [favorites])
+
+  async function fetchPage(page: number) {
+    const response = await fetch(
+      `${API_URL}?page=${page}&limit=${QUOTES_PER_SPREAD}`,
+    )
+
+    if (!response.ok) {
+      throw new Error('Unable to open this page of the book.')
+    }
+
+    const result: ApiResponse = await response.json()
+
+    return result.data
+  }
 
   useEffect(() => {
     const controller = new AbortController()
 
-    async function loadQuotes() {
+    async function loadInitialPage() {
       try {
         setLoading(true)
         setError('')
 
         const response = await fetch(
-          `${API_URL}?page=${page}`,
+          `${API_URL}?page=1&limit=${QUOTES_PER_SPREAD}`,
           {
             signal: controller.signal,
           },
         )
 
         if (!response.ok) {
-          throw new Error(
-            `Request failed with status ${response.status}`,
-          )
+          throw new Error('Unable to load the quote book.')
         }
 
-        const result: ApiResponse =
-          await response.json()
+        const result: ApiResponse = await response.json()
 
         setQuotes(result.data.data)
+        setBookPage(result.data.page)
         setTotalPages(result.data.totalPages)
         setTotalItems(result.data.totalItems)
-      } catch (error) {
-        if (
-          error instanceof DOMException &&
-          error.name === 'AbortError'
-        ) {
+
+        setPageCache({
+          1: result.data.data,
+        })
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
           return
         }
 
-        setError(
-          'The archive could not be reached. Please try again.',
-        )
+        setError('The book could not be opened. Please try again.')
       } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false)
-        }
+        setLoading(false)
       }
     }
 
-    loadQuotes()
+    loadInitialPage()
 
     return () => {
       controller.abort()
     }
-  }, [page, reloadKey])
+  }, [])
 
-  useEffect(() => {
-    localStorage.setItem(
-      'quote-favorites',
-      JSON.stringify(favorites),
-    )
-  }, [favorites])
+  const authors = useMemo(() => {
+    return [...new Set(quotes.map((quote) => quote.author))]
+  }, [quotes])
 
   const tags = useMemo(() => {
-    const tagSet = new Set<string>()
-
-    quotes.forEach((quote) => {
-      quote.tags.forEach((tag) => {
-        if (tag.trim()) {
-          tagSet.add(tag)
-        }
-      })
-    })
-
-    return ['All', ...Array.from(tagSet)]
+    return [...new Set(quotes.flatMap((quote) => quote.tags))].sort()
   }, [quotes])
 
   const filteredQuotes = useMemo(() => {
-    const query = search.trim().toLowerCase()
+    let result = [...quotes]
 
-    return quotes.filter((quote) => {
-      const matchesTag =
-        selectedTag === 'All' ||
-        quote.tags.includes(selectedTag)
+    const searchTerm = search.trim().toLowerCase()
 
-      if (!matchesTag) {
-        return false
-      }
+    if (searchTerm) {
+      result = result.filter(
+        (quote) =>
+          quote.content.toLowerCase().includes(searchTerm) ||
+          quote.author.toLowerCase().includes(searchTerm) ||
+          quote.tags.some((tag) =>
+            tag.toLowerCase().includes(searchTerm),
+          ),
+      )
+    }
 
-      if (!query) {
-        return true
-      }
+    if (selectedAuthor !== 'all') {
+      result = result.filter(
+        (quote) => quote.author === selectedAuthor,
+      )
+    }
 
-      const searchableText = `
-        ${quote.content}
-        ${quote.author}
-        ${quote.authorSlug}
-        ${quote.tags.join(' ')}
-        ${quote.id}
-      `.toLowerCase()
+    if (selectedTag !== 'all') {
+      result = result.filter((quote) =>
+        quote.tags.includes(selectedTag),
+      )
+    }
 
-      return searchableText.includes(query)
-    })
-  }, [quotes, search, selectedTag])
+    if (favoritesOnly) {
+      result = result.filter((quote) =>
+        favorites.includes(quote.id),
+      )
+    }
 
-  const favoriteCountOnPage = quotes.filter(
-    (quote) => favorites.includes(quote.id),
-  ).length
+    if (sortBy === 'shortest') {
+      result.sort((a, b) => a.length - b.length)
+    }
 
-  const authorCount = useMemo(() => {
-    return new Set(
-      quotes.map((quote) => quote.author),
-    ).size
-  }, [quotes])
+    if (sortBy === 'longest') {
+      result.sort((a, b) => b.length - a.length)
+    }
+
+    if (sortBy === 'author') {
+      result.sort((a, b) => a.author.localeCompare(b.author))
+    }
+
+    return result
+  }, [
+    quotes,
+    search,
+    selectedAuthor,
+    selectedTag,
+    sortBy,
+    favoritesOnly,
+    favorites,
+  ])
+
+  const leftPageQuotes = filteredQuotes.slice(
+    0,
+    QUOTES_PER_PHYSICAL_PAGE,
+  )
+
+  const rightPageQuotes = filteredQuotes.slice(
+    QUOTES_PER_PHYSICAL_PAGE,
+    QUOTES_PER_SPREAD,
+  )
+
+  const hasFilters =
+    search !== '' ||
+    selectedAuthor !== 'all' ||
+    selectedTag !== 'all' ||
+    sortBy !== 'default' ||
+    favoritesOnly
+
+  function clearFilters() {
+    setSearch('')
+    setSelectedAuthor('all')
+    setSelectedTag('all')
+    setSortBy('default')
+    setFavoritesOnly(false)
+  }
 
   function toggleFavorite(id: number) {
-    setFavorites((current) => {
-      if (current.includes(id)) {
-        return current.filter(
-          (favoriteId) => favoriteId !== id,
-        )
-      }
-
-      return [...current, id]
-    })
+    setFavorites((current) =>
+      current.includes(id)
+        ? current.filter((favoriteId) => favoriteId !== id)
+        : [...current, id],
+    )
   }
 
   async function copyQuote(quote: Quote) {
@@ -177,676 +230,797 @@ function App() {
       await navigator.clipboard.writeText(
         `"${quote.content}" — ${quote.author}`,
       )
+
+      setCopiedId(quote.id)
+
+      window.setTimeout(() => {
+        setCopiedId(null)
+      }, 1800)
     } catch {
-      // Clipboard may be unavailable in some browsers.
+      setError('Could not copy the quote.')
     }
   }
 
-  function surpriseMe() {
-    if (quotes.length === 0) {
-      return
-    }
-
-    const randomIndex = Math.floor(
-      Math.random() * quotes.length,
-    )
-
-    setRandomQuote(quotes[randomIndex])
+  function handleTagClick(tag: string) {
+    setSelectedTag(tag)
+    setSearch('')
+    setSelectedAuthor('all')
   }
 
-  function handlePageChange(nextPage: number) {
+  async function changePage(direction: 'next' | 'previous') {
+    const targetPage =
+      direction === 'next' ? bookPage + 1 : bookPage - 1
+
     if (
-      nextPage < 1 ||
-      nextPage > totalPages
+      targetPage < 1 ||
+      targetPage > totalPages ||
+      pageLoading
     ) {
       return
     }
 
-    setPage(nextPage)
+    try {
+      setPageLoading(true)
+      setError('')
 
-    setSearch('')
-    setSelectedTag('All')
+      let targetQuotes = pageCache[targetPage]
 
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth',
-    })
+      if (!targetQuotes) {
+        const pageData = await fetchPage(targetPage)
+
+        targetQuotes = pageData.data
+
+        setTotalPages(pageData.totalPages)
+        setTotalItems(pageData.totalItems)
+
+        setPageCache((current) => ({
+          ...current,
+          [targetPage]: targetQuotes!,
+        }))
+      }
+
+      setQuotes(targetQuotes)
+      setBookPage(targetPage)
+
+      setSearch('')
+      setSelectedAuthor('all')
+      setSelectedTag('all')
+      setSortBy('default')
+      setFavoritesOnly(false)
+
+      setTurning(direction)
+
+      window.setTimeout(() => {
+        setTurning(null)
+      }, 900)
+
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      })
+    } catch {
+      setError('This page could not be opened. Please try again.')
+    } finally {
+      setPageLoading(false)
+    }
   }
 
-  function retryRequest() {
-    setReloadKey((current) => current + 1)
+  function handleTouchStart(
+    event: React.TouchEvent<HTMLDivElement>,
+  ) {
+    touchStartX.current = event.changedTouches[0].clientX
+    touchStartY.current = event.changedTouches[0].clientY
   }
 
-  function resetFilters() {
-    setSearch('')
-    setSelectedTag('All')
+  function handleTouchEnd(
+    event: React.TouchEvent<HTMLDivElement>,
+  ) {
+    if (
+      touchStartX.current === null ||
+      touchStartY.current === null
+    ) {
+      return
+    }
+
+    const endX = event.changedTouches[0].clientX
+    const endY = event.changedTouches[0].clientY
+
+    const differenceX = endX - touchStartX.current
+    const differenceY = endY - touchStartY.current
+
+    touchStartX.current = null
+    touchStartY.current = null
+
+    if (Math.abs(differenceX) < 70) {
+      return
+    }
+
+    if (Math.abs(differenceX) < Math.abs(differenceY)) {
+      return
+    }
+
+    if (differenceX < 0) {
+      changePage('next')
+    } else {
+      changePage('previous')
+    }
+  }
+
+  function goToPage(page: number) {
+    if (
+      page === bookPage ||
+      page < 1 ||
+      page > totalPages ||
+      pageLoading
+    ) {
+      return
+    }
+
+    const direction =
+      page > bookPage ? 'next' : 'previous'
+
+    async function jump() {
+      try {
+        setPageLoading(true)
+        setError('')
+
+        let targetQuotes = pageCache[page]
+
+        if (!targetQuotes) {
+          const pageData = await fetchPage(page)
+
+          targetQuotes = pageData.data
+
+          setPageCache((current) => ({
+            ...current,
+            [page]: targetQuotes!,
+          }))
+        }
+
+        setQuotes(targetQuotes)
+        setBookPage(page)
+
+        setSearch('')
+        setSelectedAuthor('all')
+        setSelectedTag('all')
+        setSortBy('default')
+        setFavoritesOnly(false)
+
+        setTurning(direction)
+
+        window.setTimeout(() => {
+          setTurning(null)
+        }, 900)
+
+        window.scrollTo({
+          top: 0,
+          behavior: 'smooth',
+        })
+      } catch {
+        setError('Could not jump to that chapter.')
+      } finally {
+        setPageLoading(false)
+      }
+    }
+
+    jump()
+  }
+
+  function getPageNumbers() {
+    const pages: (number | 'dots')[] = []
+
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i)
+      }
+
+      return pages
+    }
+
+    pages.push(1)
+
+    if (bookPage > 3) {
+      pages.push('dots')
+    }
+
+    for (
+      let i = Math.max(2, bookPage - 1);
+      i <= Math.min(totalPages - 1, bookPage + 1);
+      i++
+    ) {
+      pages.push(i)
+    }
+
+    if (bookPage < totalPages - 2) {
+      pages.push('dots')
+    }
+
+    pages.push(totalPages)
+
+    return pages
+  }
+
+  /*
+    These are the visible page edges.
+
+    The important idea:
+    - At page 1 there is NO stack on the left.
+    - As we move forward, the left stack grows.
+    - As we approach the final page, the right stack shrinks.
+    - At the final page there is NO stack on the right.
+
+    We don't print all 50 pages because a real physical book
+    compresses many pages into a visible thickness.
+  */
+  function getStackCount(side: 'left' | 'right') {
+    const percentage =
+      side === 'left'
+        ? (bookPage - 1) / Math.max(totalPages - 1, 1)
+        : (totalPages - bookPage) /
+          Math.max(totalPages - 1, 1)
+
+    if (percentage <= 0) {
+      return 0
+    }
+
+    if (percentage < 0.15) {
+      return 3
+    }
+
+    if (percentage < 0.3) {
+      return 5
+    }
+
+    if (percentage < 0.5) {
+      return 7
+    }
+
+    if (percentage < 0.7) {
+      return 9
+    }
+
+    return 11
+  }
+
+  function renderPageStack(side: 'left' | 'right') {
+    const count = getStackCount(side)
+
+    if (count === 0) {
+      return null
+    }
+
+    return (
+      <div className={`page-stack ${side}-stack`}>
+        {Array.from({ length: count }).map((_, index) => (
+          <span
+            key={index}
+            style={{
+              '--stack-index': index,
+            } as React.CSSProperties}
+          />
+        ))}
+      </div>
+    )
+  }
+
+  function retry() {
+    window.location.reload()
+  }
+
+  if (loading) {
+    return (
+      <main className="loading-screen">
+        <div className="loading-book">
+          <div className="loading-cover">
+            <span>THE</span>
+            <strong>QUOTE</strong>
+            <span>BOOK</span>
+          </div>
+        </div>
+
+        <p>Opening the library...</p>
+      </main>
+    )
+  }
+
+  if (error && quotes.length === 0) {
+    return (
+      <main className="error-screen">
+        <div className="error-paper">
+          <span className="error-icon">!</span>
+
+          <p className="eyebrow">THE LIBRARY IS CLOSED</p>
+
+          <h1>We couldn't open the book.</h1>
+
+          <p>{error}</p>
+
+          <button className="primary-button" onClick={retry}>
+            Try again
+          </button>
+        </div>
+      </main>
+    )
   }
 
   return (
-    <div className="archive-app">
-
-      {/* Decorative background */}
-      <div className="paper-grain" />
-
-      {/* =====================================
-          HEADER
-      ====================================== */}
-
+    <div className="app-shell">
       <header className="site-header">
+        <div className="brand">
+          <div className="brand-mark">Q</div>
 
-        <div className="header-inner">
-
-          <div className="brand">
-
-            <div className="brand-emblem">
-              <span>Q</span>
-            </div>
-
-            <div className="brand-copy">
-              <strong>THE QUOTATION</strong>
-
-              <span>
-                DIGITAL READING ARCHIVE
-              </span>
-            </div>
-
+          <div>
+            <strong>THE QUOTE BOOK</strong>
+            <span>WORDS WORTH KEEPING</span>
           </div>
-
-          <div className="header-right">
-
-            <div className="archive-status">
-              <span className="status-dot" />
-              ARCHIVE ONLINE
-            </div>
-
-            <div className="header-page">
-              VOL. 01 / {String(page).padStart(2, '0')}
-            </div>
-
-          </div>
-
         </div>
 
-      </header>
-
-
-      <main className="main-content">
-
-        {/* =====================================
-            HERO
-        ====================================== */}
-
-        <section className="hero">
-
-          <div className="hero-main">
-
-            <div className="hero-label">
-              <span />
-              A COLLECTION OF THOUGHTS
-              <span />
-            </div>
-
-            <h1>
-              Words worth
-              <em> keeping.</em>
-            </h1>
-
-            <p className="hero-intro">
-              A quiet corner of the internet for ideas,
-              observations, and sentences that deserve a
-              second read.
-            </p>
-
-            <div className="hero-controls">
-
-              <button
-                className="random-button"
-                onClick={surpriseMe}
-                disabled={quotes.length === 0}
-              >
-                <span className="random-symbol">
-                  ✦
-                </span>
-
-                Open a random page
-              </button>
-
-              <span className="hero-hint">
-                You never know what you'll find.
-              </span>
-
-            </div>
-
+        <div className="header-stats">
+          <div>
+            <strong>{totalItems}</strong>
+            <span>QUOTES</span>
           </div>
 
+          <div className="header-divider" />
 
-          <aside className="archive-card">
+          <div>
+            <strong>{totalPages}</strong>
+            <span>PAGES</span>
+          </div>
+        </div>
+      </header>
 
-            <div className="archive-card-top">
-              <span>THE ARCHIVE</span>
+      <main className="main-content">
+        <section className="intro-section">
+          <div>
+            <p className="eyebrow">
+              A SMALL LIBRARY OF BIG IDEAS
+            </p>
 
-              <span>
-                EST. 2023
-              </span>
-            </div>
+            <h1>
+              Turn the page.
+              <br />
+              <em>Find a thought worth keeping.</em>
+            </h1>
 
-            <div className="archive-number">
-              {totalItems.toLocaleString()}
-            </div>
+            <p className="intro-copy">
+              A collection of memorable words, observations and
+              ideas from voices that have something to say.
+            </p>
+          </div>
 
-            <div className="archive-title">
-              QUOTATIONS
-            </div>
+          <div className="book-status">
+            <span>YOU ARE READING</span>
 
-            <div className="archive-rule">
-              <span />
-              <span />
-              <span />
-            </div>
-
-            <div className="archive-details">
-
-              <div>
-                <small>THIS PAGE</small>
-                <strong>
-                  {quotes.length}
-                </strong>
-              </div>
-
-              <div>
-                <small>AUTHORS</small>
-                <strong>
-                  {authorCount}
-                </strong>
-              </div>
-
-              <div>
-                <small>SAVED</small>
-                <strong>
-                  {favoriteCountOnPage}
-                </strong>
-              </div>
-
-            </div>
-
-          </aside>
-
+            <strong>
+              {bookPage === 1
+                ? 'THE BEGINNING'
+                : bookPage === totalPages
+                  ? 'THE END'
+                  : 'THE COLLECTION'}
+            </strong>
+          </div>
         </section>
 
-
-        {/* =====================================
-            SEARCH + FILTERS
-        ====================================== */}
-
-        <section className="toolbar">
-
-          <div className="search-box">
-
-            <span className="search-symbol">
-              ⌕
-            </span>
+        <section className="library-toolbar">
+          <div className="search-wrapper">
+            <span className="search-icon">⌕</span>
 
             <input
               type="text"
+              placeholder="Find a quote, author or idea..."
               value={search}
-              onChange={(event) =>
-                setSearch(event.target.value)
-              }
-              placeholder="Search an author, idea, tag..."
-              aria-label="Search quotes"
+              onChange={(event) => setSearch(event.target.value)}
             />
 
             {search && (
               <button
-                className="clear-button"
-                onClick={() =>
-                  setSearch('')
-                }
-                aria-label="Clear search"
+                className="clear-search"
+                onClick={() => setSearch('')}
               >
                 ×
               </button>
             )}
-
           </div>
 
-
-          <div className="tag-filter">
-
-            <span className="filter-title">
-              EXPLORE BY THEME
-            </span>
-
-            <div className="tag-list">
-
-              {tags.map((tag) => (
-                <button
-                  key={tag}
-                  className={`filter-tag ${
-                    selectedTag === tag
-                      ? 'selected'
-                      : ''
-                  }`}
-                  onClick={() =>
-                    setSelectedTag(tag)
-                  }
-                >
-                  {tag === 'All'
-                    ? 'All quotes'
-                    : tag}
-                </button>
-              ))}
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        {/* =====================================
-            SECTION HEADING
-        ====================================== */}
-
-        <section className="collection-heading">
-
-          <div>
-
-            <div className="small-label">
-              THE COLLECTION
-            </div>
-
-            <h2>
-              {search ||
-              selectedTag !== 'All'
-                ? 'Selected passages'
-                : 'Today’s reading'}
-            </h2>
-
-          </div>
-
-          <div className="collection-meta">
-
-            <div className="meta-line">
-              <span>PAGE</span>
-              <strong>
-                {String(page).padStart(2, '0')}
-              </strong>
-              <span>
-                / {String(totalPages).padStart(2, '0')}
-              </span>
-            </div>
-
-            <div className="vertical-rule" />
-
-            <div className="meta-line">
-              <span>SHOWING</span>
-              <strong>
-                {filteredQuotes.length}
-              </strong>
-            </div>
-
-          </div>
-
-        </section>
-
-
-        {/* =====================================
-            LOADING
-        ====================================== */}
-
-        {loading && (
-          <section className="quote-grid">
-
-            {Array.from({ length: 10 }).map(
-              (_, index) => (
-                <div
-                  className="quote-skeleton"
-                  key={index}
-                >
-                  <div className="skeleton-number" />
-
-                  <div className="skeleton-content">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-
-                  <div className="skeleton-author">
-                    <span />
-                    <span />
-                  </div>
-                </div>
-              ),
-            )}
-
-          </section>
-        )}
-
-
-        {/* =====================================
-            ERROR
-        ====================================== */}
-
-        {!loading && error && (
-          <section className="state-card">
-
-            <div className="state-symbol">
-              —
-            </div>
-
-            <div>
-              <div className="small-label">
-                ARCHIVE ERROR
-              </div>
-
-              <h2>
-                This page could not be opened.
-              </h2>
-
-              <p>{error}</p>
-
-              <button
-                className="random-button"
-                onClick={retryRequest}
-              >
-                Try again
-              </button>
-            </div>
-
-          </section>
-        )}
-
-
-        {/* =====================================
-            QUOTES
-        ====================================== */}
-
-        {!loading &&
-          !error &&
-          filteredQuotes.length > 0 && (
-            <section className="quote-grid">
-
-              {filteredQuotes.map(
-                (quote, index) => (
-                  <QuoteCard
-                    key={quote.id}
-                    quote={quote}
-                    index={index}
-                    isFavorite={favorites.includes(
-                      quote.id,
-                    )}
-                    onToggleFavorite={
-                      toggleFavorite
-                    }
-                    onCopy={copyQuote}
-                  />
-                ),
-              )}
-
-            </section>
-          )}
-
-
-        {/* =====================================
-            EMPTY
-        ====================================== */}
-
-        {!loading &&
-          !error &&
-          filteredQuotes.length === 0 && (
-            <section className="state-card">
-
-              <div className="state-symbol">
-                ∅
-              </div>
-
-              <div>
-
-                <div className="small-label">
-                  NO RESULTS
-                </div>
-
-                <h2>
-                  Nothing matches your search.
-                </h2>
-
-                <p>
-                  Try another author, keyword,
-                  or theme.
-                </p>
-
-                <button
-                  className="secondary-button"
-                  onClick={resetFilters}
-                >
-                  Clear filters
-                </button>
-
-              </div>
-
-            </section>
-          )}
-
-
-        {/* =====================================
-            PAGINATION
-        ====================================== */}
-
-        <section className="pagination">
-
-          <div className="pagination-info">
-
-            <span className="small-label">
-              CONTINUE READING
-            </span>
-
-            <p>
-              Archive page{' '}
-              <strong>{page}</strong> of{' '}
-              <strong>{totalPages}</strong>
-            </p>
-
-          </div>
-
-
-          <div className="pagination-controls">
-
-            <button
-              className="page-button"
-              disabled={
-                page === 1 || loading
-              }
-              onClick={() =>
-                handlePageChange(page - 1)
-              }
-            >
-              <span>←</span>
-              Previous
-            </button>
-
-
-            <div className="page-number">
-
-              <strong>
-                {String(page).padStart(
-                  2,
-                  '0',
-                )}
-              </strong>
-
-              <span>
-                / {String(totalPages).padStart(
-                  2,
-                  '0',
-                )}
-              </span>
-
-            </div>
-
-
-            <button
-              className="page-button next"
-              disabled={
-                page === totalPages ||
-                loading
-              }
-              onClick={() =>
-                handlePageChange(page + 1)
-              }
-            >
-              Next
-              <span>→</span>
-            </button>
-
-          </div>
-
-        </section>
-
-      </main>
-
-
-      {/* =====================================
-          FOOTER
-      ====================================== */}
-
-      <footer className="site-footer">
-
-        <div className="footer-inner">
-
-          <div className="footer-brand">
-            THE QUOTATION
-          </div>
-
-          <div className="footer-motto">
-            <span>“</span>
-            Read slowly. Think deeply.
-            <span>”</span>
-          </div>
-
-          <div className="footer-stats">
-            {totalItems.toLocaleString()} ENTRIES
-            <span>·</span>
-            {totalPages} PAGES
-          </div>
-
-        </div>
-
-      </footer>
-
-
-      {/* =====================================
-          RANDOM QUOTE MODAL
-      ====================================== */}
-
-      {randomQuote && (
-        <div
-          className="quote-modal-overlay"
-          onClick={() =>
-            setRandomQuote(null)
-          }
-        >
-
-          <div
-            className="quote-modal"
-            onClick={(event) =>
-              event.stopPropagation()
+          <select
+            value={selectedAuthor}
+            onChange={(event) =>
+              setSelectedAuthor(event.target.value)
             }
           >
+            <option value="all">All authors</option>
 
+            {authors.map((author) => (
+              <option key={author} value={author}>
+                {author}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={selectedTag}
+            onChange={(event) =>
+              setSelectedTag(event.target.value)
+            }
+          >
+            <option value="all">All subjects</option>
+
+            {tags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={sortBy}
+            onChange={(event) =>
+              setSortBy(event.target.value as SortOption)
+            }
+          >
+            <option value="default">Original order</option>
+            <option value="shortest">Shortest first</option>
+            <option value="longest">Longest first</option>
+            <option value="author">Author A–Z</option>
+          </select>
+
+          <button
+            className={`favorites-filter ${
+              favoritesOnly ? 'active' : ''
+            }`}
+            onClick={() =>
+              setFavoritesOnly((current) => !current)
+            }
+          >
+            {favoritesOnly ? '★' : '☆'} Favorites
+          </button>
+
+          {hasFilters && (
+            <button className="reset-filter" onClick={clearFilters}>
+              Clear
+            </button>
+          )}
+        </section>
+
+        {error && (
+          <div className="small-error">
+            <span>{error}</span>
+
+            <button onClick={() => setError('')}>
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        <section
+          className="book-stage"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="book-shadow" />
+
+          <div
+            className={`book ${
+              bookPage === 1 ? 'at-first-page' : ''
+            } ${
+              bookPage === totalPages ? 'at-last-page' : ''
+            }`}
+          >
+            {renderPageStack('left')}
+
+            <div className="book-cover-edge" />
+
+            <div className="book-pages">
+              <div className="paper-page left-page">
+                <div className="page-header">
+                  <span>THE QUOTE BOOK</span>
+                  <span>COLLECTION</span>
+                </div>
+
+                <div className="page-content">
+                  {leftPageQuotes.length > 0 ? (
+                    leftPageQuotes.map((quote, index) => (
+                      <QuoteCard
+                        key={quote.id}
+                        quote={quote}
+                        number={index + 1}
+                        isFavorite={favorites.includes(quote.id)}
+                        isCopied={copiedId === quote.id}
+                        onCopy={copyQuote}
+                        onToggleFavorite={toggleFavorite}
+                        onFocus={setFocusedQuote}
+                        onTagClick={handleTagClick}
+                      />
+                    ))
+                  ) : (
+                    <div className="empty-page">
+                      <span>⌕</span>
+                      <strong>No words found.</strong>
+                      <p>
+                        This page has nothing matching your search.
+                      </p>
+
+                      <button
+                        className="paper-button"
+                        onClick={clearFilters}
+                      >
+                        Clear filters
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="page-footer">
+                  <span>✦</span>
+                  <span>
+                    {(bookPage - 1) * QUOTES_PER_SPREAD + 1}
+                  </span>
+                </div>
+              </div>
+
+              <div className="paper-page right-page">
+                <div className="page-header">
+                  <span>WORDS &amp; WISDOM</span>
+
+                  <span>
+                    {bookPage === totalPages
+                      ? 'THE END'
+                      : 'CONTINUED'}
+                  </span>
+                </div>
+
+                <div className="page-content">
+                  {rightPageQuotes.length > 0 ? (
+                    rightPageQuotes.map((quote, index) => (
+                      <QuoteCard
+                        key={quote.id}
+                        quote={quote}
+                        number={index + 4}
+                        isFavorite={favorites.includes(quote.id)}
+                        isCopied={copiedId === quote.id}
+                        onCopy={copyQuote}
+                        onToggleFavorite={toggleFavorite}
+                        onFocus={setFocusedQuote}
+                        onTagClick={handleTagClick}
+                      />
+                    ))
+                  ) : (
+                    <div className="empty-page">
+                      <span>✦</span>
+                      <strong>The final thought.</strong>
+                      <p>
+                        There are no more quotes on this spread.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="page-footer">
+                  <span>
+                    {bookPage === totalPages
+                      ? 'THE END'
+                      : 'TURN THE PAGE'}
+                  </span>
+
+                  <span>
+                    {Math.min(
+                      bookPage * QUOTES_PER_SPREAD,
+                      totalItems,
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {turning && (
+                <div
+                  className={`turning-page ${
+                    turning === 'next'
+                      ? 'turning-next'
+                      : 'turning-previous'
+                  }`}
+                >
+                  <div className="turning-page-front">
+                    <span className="turning-label">
+                      THE QUOTE BOOK
+                    </span>
+
+                    <strong>
+                      {turning === 'next'
+                        ? bookPage - 1
+                        : bookPage + 1}
+                    </strong>
+
+                    <span>TURNING THE PAGE</span>
+                  </div>
+
+                  <div className="turning-page-back">
+                    <span>THE QUOTE BOOK</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {renderPageStack('right')}
+          </div>
+        </section>
+
+        <section className="book-controls">
+          <button
+            className="page-control previous"
+            onClick={() => changePage('previous')}
+            disabled={bookPage === 1 || pageLoading}
+          >
+            <span>←</span>
+
+            <div>
+              <small>PREVIOUS</small>
+              <strong>
+                {bookPage === 1
+                  ? 'Beginning of book'
+                  : 'Turn back'}
+              </strong>
+            </div>
+          </button>
+
+          <div className="page-indicator">
+            <span>THE BOOK</span>
+
+            <div className="page-numbers">
+              {getPageNumbers().map((page, index) =>
+                page === 'dots' ? (
+                  <span
+                    className="dots"
+                    key={`dots-${index}`}
+                  >
+                    ···
+                  </span>
+                ) : (
+                  <button
+                    key={page}
+                    className={
+                      page === bookPage
+                        ? 'current-page'
+                        : ''
+                    }
+                    onClick={() => goToPage(page)}
+                  >
+                    {page}
+                  </button>
+                ),
+              )}
+            </div>
+
+            <small>
+              {pageLoading
+                ? 'Turning the pages...'
+                : bookPage === 1
+                  ? 'The first spread'
+                  : bookPage === totalPages
+                    ? 'The final spread'
+                    : 'Keep reading'}
+            </small>
+          </div>
+
+          <button
+            className="page-control next"
+            onClick={() => changePage('next')}
+            disabled={
+              bookPage === totalPages || pageLoading
+            }
+          >
+            <div>
+              <small>NEXT</small>
+
+              <strong>
+                {bookPage === totalPages
+                  ? 'End of book'
+                  : 'Turn the page'}
+              </strong>
+            </div>
+
+            <span>→</span>
+          </button>
+        </section>
+
+        <section className="closing-note">
+          <span className="ornament">✦</span>
+
+          <p>
+            “Some books are to be tasted, others to be swallowed,
+            and some few to be chewed and digested.”
+          </p>
+
+          <small>— FRANCIS BACON</small>
+        </section>
+      </main>
+
+      {focusedQuote && (
+        <div
+          className="quote-modal-overlay"
+          onClick={() => setFocusedQuote(null)}
+        >
+          <div
+            className="quote-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               className="modal-close"
-              onClick={() =>
-                setRandomQuote(null)
-              }
-              aria-label="Close quote"
+              onClick={() => setFocusedQuote(null)}
+              aria-label="Close"
             >
               ×
             </button>
 
+            <span className="modal-kicker">
+              QUOTE #{focusedQuote.id}
+            </span>
 
-            <div className="modal-top">
+            <div className="modal-quote-mark">“</div>
 
-              <span>
-                RANDOMLY SELECTED
-              </span>
-
-              <span>
-                #{String(randomQuote.id).padStart(
-                  4,
-                  '0',
-                )}
-              </span>
-
-            </div>
-
-
-            <div className="modal-quote-mark">
-              “
-            </div>
-
-
-            <blockquote>
-              {randomQuote.content}
-            </blockquote>
-
+            <blockquote>{focusedQuote.content}</blockquote>
 
             <div className="modal-author">
-
-              <span className="author-line" />
-
-              <div>
-                <strong>
-                  {randomQuote.author}
-                </strong>
-
-                <small>
-                  @{randomQuote.authorSlug}
-                </small>
+              <div className="author-monogram">
+                {focusedQuote.author
+                  .split(' ')
+                  .map((word) => word[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase()}
               </div>
 
+              <div>
+                <strong>{focusedQuote.author}</strong>
+                <span>@{focusedQuote.authorSlug}</span>
+              </div>
             </div>
 
-
-            <div className="modal-actions">
-
-              <button
-                className="modal-action"
-                onClick={() =>
-                  copyQuote(randomQuote)
-                }
-              >
-                ▣ &nbsp; Copy quote
-              </button>
-
-              <button
-                className={`modal-action ${
-                  favorites.includes(
-                    randomQuote.id,
-                  )
-                    ? 'modal-saved'
-                    : ''
-                }`}
-                onClick={() =>
-                  toggleFavorite(
-                    randomQuote.id,
-                  )
-                }
-              >
-                {favorites.includes(
-                  randomQuote.id,
-                )
-                  ? '♥ Saved'
-                  : '♡ Save quote'}
-              </button>
-
+            <div className="modal-tags">
+              {focusedQuote.tags.length > 0 ? (
+                focusedQuote.tags.map((tag) => (
+                  <span key={tag}>#{tag}</span>
+                ))
+              ) : (
+                <span>No tags</span>
+              )}
             </div>
 
+            <div className="modal-details">
+              <div>
+                <span>LENGTH</span>
+                <strong>
+                  {focusedQuote.length} characters
+                </strong>
+              </div>
+
+              <div>
+                <span>ADDED</span>
+                <strong>{focusedQuote.dateAdded}</strong>
+              </div>
+
+              <div>
+                <span>MODIFIED</span>
+                <strong>{focusedQuote.dateModified}</strong>
+              </div>
+
+              <div>
+                <span>DATABASE ID</span>
+                <strong>#{focusedQuote.id}</strong>
+              </div>
+            </div>
+
+            <button
+              className="modal-copy"
+              onClick={() => copyQuote(focusedQuote)}
+            >
+              {copiedId === focusedQuote.id
+                ? '✓ Quote copied'
+                : 'Copy this quote'}
+            </button>
           </div>
-
         </div>
       )}
-
     </div>
   )
 }
