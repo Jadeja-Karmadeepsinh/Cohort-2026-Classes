@@ -1,85 +1,134 @@
-type User = {
+export type User = {
   gender: string
+
   name: {
     title: string
     first: string
     last: string
   }
+
   location: {
     street: {
       number: number
       name: string
     }
+
     city: string
     state: string
     country: string
     postcode: string | number
+
     coordinates: {
       latitude: string
       longitude: string
     }
+
     timezone: {
       offset: string
       description: string
     }
   }
+
   email: string
+
   login: {
     uuid: string
     username: string
   }
+
   dob: {
     date: string
     age: number
   }
+
   registered: {
     date: string
     age: number
   }
+
   phone: string
   cell: string
+
   id: number
+
   picture: {
     large: string
     medium: string
     thumbnail: string
   }
+
   nat: string
 }
+
 
 type UserCardProps = {
   user: User
 }
+
+
+function getCountryFlag(countryCode: string) {
+  if (!countryCode || countryCode.length !== 2) {
+    return '🌍'
+  }
+
+  return countryCode
+    .toUpperCase()
+    .split('')
+    .map(
+      (char) =>
+        String.fromCodePoint(
+          127397 + char.charCodeAt(0)
+        )
+    )
+    .join('')
+}
+
 
 function UserCard({ user }: UserCardProps) {
 
   const fullName =
     `${user.name.title} ${user.name.first} ${user.name.last}`
 
-  const formattedBirthDate = new Date(
-    user.dob.date
-  ).toLocaleDateString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
 
-  const formattedRegisteredDate = new Date(
-    user.registered.date
-  ).toLocaleDateString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
+  const formattedBirthDate =
+    new Date(user.dob.date).toLocaleDateString(
+      'en-US',
+      {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }
+    )
+
+
+  const formattedRegisteredDate =
+    new Date(
+      user.registered.date
+    ).toLocaleDateString(
+      'en-US',
+      {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }
+    )
+
+
+  const flag = getCountryFlag(user.nat)
+
+
+  const mapUrl =
+    `https://www.openstreetmap.org/?mlat=${user.location.coordinates.latitude}&mlon=${user.location.coordinates.longitude}#map=12/${user.location.coordinates.latitude}/${user.location.coordinates.longitude}`
+
 
   return (
     <article className="user-card">
 
-      {/* Top accent */}
+      {/* Orange accent */}
       <div className="card-accent"></div>
 
 
-      {/* Profile section */}
+      {/* Profile */}
       <div className="profile-section">
 
         <div className="avatar-wrapper">
@@ -89,8 +138,6 @@ function UserCard({ user }: UserCardProps) {
             alt={fullName}
             className="user-avatar"
           />
-
-          <span className="online-indicator"></span>
 
         </div>
 
@@ -104,21 +151,33 @@ function UserCard({ user }: UserCardProps) {
             </h3>
 
             <span className="gender-badge">
-              {user.gender === 'male' ? '♂' : '♀'}
+              {user.gender === 'male'
+                ? '♂'
+                : '♀'}
             </span>
 
           </div>
 
+
           <p className="user-title">
-            {user.name.title} · @{user.login.username}
+            {user.name.title}
+            {' · '}
+            @{user.login.username}
           </p>
 
+
           <div className="country-tag">
-            <span>🌍</span>
+
+            <span>
+              {flag}
+            </span>
+
             {user.location.country}
+
             <span className="country-code">
               {user.nat}
             </span>
+
           </div>
 
         </div>
@@ -130,8 +189,13 @@ function UserCard({ user }: UserCardProps) {
       <div className="card-section">
 
         <div className="section-heading">
-          <span className="section-icon">✉</span>
+
+          <span className="section-icon">
+            ✉
+          </span>
+
           Contact
+
         </div>
 
 
@@ -142,11 +206,20 @@ function UserCard({ user }: UserCardProps) {
             className="info-row"
           >
 
-            <span className="info-icon">✉</span>
+            <span className="info-icon">
+              ✉
+            </span>
 
             <div>
-              <small>Email</small>
-              <strong>{user.email}</strong>
+
+              <small>
+                Email
+              </small>
+
+              <strong>
+                {user.email}
+              </strong>
+
             </div>
 
           </a>
@@ -157,11 +230,20 @@ function UserCard({ user }: UserCardProps) {
             className="info-row"
           >
 
-            <span className="info-icon">☎</span>
+            <span className="info-icon">
+              ☎
+            </span>
 
             <div>
-              <small>Phone</small>
-              <strong>{user.phone}</strong>
+
+              <small>
+                Phone
+              </small>
+
+              <strong>
+                {user.phone}
+              </strong>
+
             </div>
 
           </a>
@@ -172,11 +254,20 @@ function UserCard({ user }: UserCardProps) {
             className="info-row"
           >
 
-            <span className="info-icon">📱</span>
+            <span className="info-icon">
+              📱
+            </span>
 
             <div>
-              <small>Mobile</small>
-              <strong>{user.cell}</strong>
+
+              <small>
+                Mobile
+              </small>
+
+              <strong>
+                {user.cell}
+              </strong>
+
             </div>
 
           </a>
@@ -190,8 +281,13 @@ function UserCard({ user }: UserCardProps) {
       <div className="card-section">
 
         <div className="section-heading">
-          <span className="section-icon">⌖</span>
+
+          <span className="section-icon">
+            ⌖
+          </span>
+
           Location
+
         </div>
 
 
@@ -204,7 +300,8 @@ function UserCard({ user }: UserCardProps) {
             </strong>
 
             <span>
-              {user.location.state}, {user.location.country}
+              {user.location.state},{' '}
+              {user.location.country}
             </span>
 
           </div>
@@ -218,29 +315,53 @@ function UserCard({ user }: UserCardProps) {
             <br />
 
             <span>
-              Postal Code: {user.location.postcode}
+              Postal Code:{' '}
+              {user.location.postcode}
             </span>
 
           </div>
 
 
+          {/* Coordinates */}
           <div className="coordinates">
 
             <div>
-              <span>LATITUDE</span>
+
+              <span>
+                LATITUDE
+              </span>
+
               <strong>
                 {user.location.coordinates.latitude}°
               </strong>
+
             </div>
+
 
             <div className="coordinate-divider"></div>
 
+
             <div>
-              <span>LONGITUDE</span>
+
+              <span>
+                LONGITUDE
+              </span>
+
               <strong>
                 {user.location.coordinates.longitude}°
               </strong>
+
             </div>
+
+
+            <a
+              href={mapUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="map-button"
+            >
+              ↗ Map
+            </a>
 
           </div>
 
@@ -253,8 +374,13 @@ function UserCard({ user }: UserCardProps) {
       <div className="card-section">
 
         <div className="section-heading">
-          <span className="section-icon">◉</span>
+
+          <span className="section-icon">
+            ◉
+          </span>
+
           Personal
+
         </div>
 
 
@@ -262,10 +388,12 @@ function UserCard({ user }: UserCardProps) {
 
           <div className="personal-item">
 
-            <span>AGE</span>
+            <span>
+              AGE
+            </span>
 
             <strong>
-              {user.dob.age}
+              {user.dob.age} years
             </strong>
 
           </div>
@@ -273,7 +401,9 @@ function UserCard({ user }: UserCardProps) {
 
           <div className="personal-item">
 
-            <span>GENDER</span>
+            <span>
+              GENDER
+            </span>
 
             <strong>
               {user.gender}
@@ -284,7 +414,9 @@ function UserCard({ user }: UserCardProps) {
 
           <div className="personal-item">
 
-            <span>BIRTH DATE</span>
+            <span>
+              BIRTH DATE
+            </span>
 
             <strong>
               {formattedBirthDate}
@@ -295,7 +427,9 @@ function UserCard({ user }: UserCardProps) {
 
           <div className="personal-item">
 
-            <span>USER ID</span>
+            <span>
+              USER ID
+            </span>
 
             <strong>
               #{user.id}
@@ -315,9 +449,12 @@ function UserCard({ user }: UserCardProps) {
           ◷
         </div>
 
+
         <div>
 
-          <span>TIMEZONE</span>
+          <span>
+            TIMEZONE
+          </span>
 
           <strong>
             {user.location.timezone.offset}
@@ -337,7 +474,9 @@ function UserCard({ user }: UserCardProps) {
 
         <div>
 
-          <span>MEMBER SINCE</span>
+          <span>
+            MEMBER SINCE
+          </span>
 
           <strong>
             {formattedRegisteredDate}
@@ -348,7 +487,9 @@ function UserCard({ user }: UserCardProps) {
 
         <div className="uuid">
 
-          <span>PROFILE ID</span>
+          <span>
+            PROFILE ID
+          </span>
 
           <strong>
             {user.login.uuid.slice(0, 8)}...
@@ -361,5 +502,6 @@ function UserCard({ user }: UserCardProps) {
     </article>
   )
 }
+
 
 export default UserCard

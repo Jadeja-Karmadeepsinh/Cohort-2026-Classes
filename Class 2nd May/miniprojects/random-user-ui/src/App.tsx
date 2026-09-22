@@ -62,6 +62,8 @@ function App() {
   const [search, setSearch] = useState('')
   const [genderFilter, setGenderFilter] = useState('all')
 
+  const [refreshKey, setRefreshKey] = useState(0)
+
   useEffect(() => {
     const controller = new AbortController()
 
@@ -96,7 +98,9 @@ function App() {
         console.error(error)
         setError(true)
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
       }
     }
 
@@ -105,7 +109,7 @@ function App() {
     return () => {
       controller.abort()
     }
-  }, [page])
+  }, [page, refreshKey])
 
   const filteredUsers = data.filter((user) => {
     const fullName =
@@ -117,6 +121,7 @@ function App() {
       fullName.includes(searchValue) ||
       user.email.toLowerCase().includes(searchValue) ||
       user.location.country.toLowerCase().includes(searchValue) ||
+      user.location.city.toLowerCase().includes(searchValue) ||
       user.login.username.toLowerCase().includes(searchValue)
 
     const matchesGender =
@@ -129,20 +134,32 @@ function App() {
   function handlePrevious() {
     if (page > 1) {
       setPage((previousPage) => previousPage - 1)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      })
     }
   }
 
   function handleNext() {
     if (page < totalPages) {
       setPage((previousPage) => previousPage + 1)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      })
     }
   }
 
   function handleRefresh() {
-    setPage((previousPage) => previousPage)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    setRefreshKey((previousKey) => previousKey + 1)
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    })
   }
 
   return (
@@ -152,17 +169,25 @@ function App() {
       <div className="background-glow glow-one"></div>
       <div className="background-glow glow-two"></div>
 
+      {/* Top Navigation */}
       <header className="topbar">
 
         <div className="brand">
+
           <div className="brand-icon">
             👥
           </div>
 
           <div>
-            <h1>People<span>Hub</span></h1>
-            <p>Random User Directory</p>
+            <h1>
+              People<span>Hub</span>
+            </h1>
+
+            <p>
+              Random User Directory
+            </p>
           </div>
+
         </div>
 
         <button
@@ -170,7 +195,13 @@ function App() {
           onClick={handleRefresh}
           disabled={loading}
         >
-          <span className={loading ? 'refresh-icon spinning' : 'refresh-icon'}>
+          <span
+            className={
+              loading
+                ? 'refresh-icon spinning'
+                : 'refresh-icon'
+            }
+          >
             ↻
           </span>
 
@@ -179,8 +210,10 @@ function App() {
 
       </header>
 
+
       <main className="main-container">
 
+        {/* Hero */}
         <section className="hero-section">
 
           <div className="hero-content">
@@ -197,12 +230,13 @@ function App() {
             </h2>
 
             <p>
-              Explore randomly generated profiles with their
-              personal details, location, contact information
-              and more.
+              Explore randomly generated profiles with
+              contact information, location, personal
+              details and more.
             </p>
 
           </div>
+
 
           <div className="hero-stat">
 
@@ -211,8 +245,13 @@ function App() {
             </div>
 
             <div>
-              <strong>{loading ? '—' : data.length}</strong>
-              <span>Profiles loaded</span>
+              <strong>
+                {loading ? '—' : data.length}
+              </strong>
+
+              <span>
+                Profiles loaded
+              </span>
             </div>
 
           </div>
@@ -220,6 +259,7 @@ function App() {
         </section>
 
 
+        {/* Search + Filters */}
         <section className="toolbar">
 
           <div className="search-box">
@@ -230,9 +270,11 @@ function App() {
 
             <input
               type="text"
-              placeholder="Search by name, email, country or username..."
+              placeholder="Search by name, email, country, city or username..."
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) =>
+                setSearch(event.target.value)
+              }
             />
 
             {search && (
@@ -255,7 +297,9 @@ function App() {
                   ? 'filter-button active'
                   : 'filter-button'
               }
-              onClick={() => setGenderFilter('all')}
+              onClick={() =>
+                setGenderFilter('all')
+              }
             >
               All
             </button>
@@ -263,10 +307,12 @@ function App() {
             <button
               className={
                 genderFilter === 'male'
-                  ? 'filter-button active male'
+                  ? 'filter-button active'
                   : 'filter-button'
               }
-              onClick={() => setGenderFilter('male')}
+              onClick={() =>
+                setGenderFilter('male')
+              }
             >
               ♂ Male
             </button>
@@ -274,10 +320,12 @@ function App() {
             <button
               className={
                 genderFilter === 'female'
-                  ? 'filter-button active female'
+                  ? 'filter-button active'
                   : 'filter-button'
               }
-              onClick={() => setGenderFilter('female')}
+              onClick={() =>
+                setGenderFilter('female')
+              }
             >
               ♀ Female
             </button>
@@ -287,31 +335,48 @@ function App() {
         </section>
 
 
+        {/* Loading */}
         {loading && (
           <section className="user-grid">
 
-            {Array.from({ length: 10 }).map((_, index) => (
-              <div className="skeleton-card" key={index}>
+            {Array.from({ length: 10 }).map(
+              (_, index) => (
+                <div
+                  className="skeleton-card"
+                  key={index}
+                >
 
-                <div className="skeleton skeleton-image"></div>
+                  <div className="skeleton-profile">
 
-                <div className="skeleton-content">
+                    <div className="skeleton skeleton-avatar"></div>
 
-                  <div className="skeleton skeleton-line large"></div>
-                  <div className="skeleton skeleton-line medium"></div>
-                  <div className="skeleton skeleton-line"></div>
-                  <div className="skeleton skeleton-line"></div>
-                  <div className="skeleton skeleton-line short"></div>
+                    <div className="skeleton-profile-text">
+
+                      <div className="skeleton skeleton-line large"></div>
+
+                      <div className="skeleton skeleton-line medium"></div>
+
+                      <div className="skeleton skeleton-line short"></div>
+
+                    </div>
+
+                  </div>
+
+                  <div className="skeleton skeleton-block"></div>
+
+                  <div className="skeleton skeleton-block"></div>
+
+                  <div className="skeleton skeleton-block"></div>
 
                 </div>
-
-              </div>
-            ))}
+              )
+            )}
 
           </section>
         )}
 
 
+        {/* Error */}
         {!loading && error && (
           <section className="state-container">
 
@@ -319,7 +384,9 @@ function App() {
               ⚠
             </div>
 
-            <h3>Something went wrong</h3>
+            <h3>
+              Something went wrong
+            </h3>
 
             <p>
               We couldn't load the users right now.
@@ -328,7 +395,7 @@ function App() {
 
             <button
               className="retry-button"
-              onClick={() => setPage(page)}
+              onClick={handleRefresh}
             >
               Try Again
             </button>
@@ -337,109 +404,143 @@ function App() {
         )}
 
 
-        {!loading && !error && filteredUsers.length === 0 && (
-          <section className="state-container">
+        {/* No results */}
+        {!loading &&
+          !error &&
+          filteredUsers.length === 0 && (
+            <section className="state-container">
 
-            <div className="state-icon">
-              ⌕
-            </div>
-
-            <h3>No users found</h3>
-
-            <p>
-              Try searching with another name, email,
-              username or country.
-            </p>
-
-            <button
-              className="retry-button"
-              onClick={() => {
-                setSearch('')
-                setGenderFilter('all')
-              }}
-            >
-              Clear Filters
-            </button>
-
-          </section>
-        )}
-
-
-        {!loading && !error && filteredUsers.length > 0 && (
-          <>
-
-            <div className="results-header">
-
-              <div>
-                <span className="results-title">
-                  User Profiles
-                </span>
-
-                <span className="results-count">
-                  {filteredUsers.length} of {data.length}
-                </span>
+              <div className="state-icon">
+                ⌕
               </div>
 
-              <span className="page-indicator">
-                Page {page} / {totalPages}
-              </span>
+              <h3>
+                No users found
+              </h3>
 
-            </div>
+              <p>
+                Try searching with another name,
+                email, username, city or country.
+              </p>
 
-
-            <section className="user-grid">
-
-              {filteredUsers.map((user) => (
-                <UserCard
-                  key={user.login.uuid}
-                  user={user}
-                />
-              ))}
+              <button
+                className="retry-button"
+                onClick={() => {
+                  setSearch('')
+                  setGenderFilter('all')
+                }}
+              >
+                Clear Filters
+              </button>
 
             </section>
+          )}
 
 
-            <div className="pagination">
+        {/* Users */}
+        {!loading &&
+          !error &&
+          filteredUsers.length > 0 && (
+            <>
 
-              <button
-                className="page-button"
-                onClick={handlePrevious}
-                disabled={page === 1}
-              >
-                ←
-                <span>Previous</span>
-              </button>
+              <div className="results-header">
 
+                <div>
 
-              <div className="page-number">
-                <span>Page</span>
-                <strong>{page}</strong>
-                <span>of {totalPages}</span>
+                  <span className="results-title">
+                    User Profiles
+                  </span>
+
+                  <span className="results-count">
+                    {filteredUsers.length} of {data.length}
+                  </span>
+
+                </div>
+
+                <span className="page-indicator">
+                  Page {page} / {totalPages}
+                </span>
+
               </div>
 
 
-              <button
-                className="page-button next"
-                onClick={handleNext}
-                disabled={page === totalPages}
-              >
-                <span>Next</span>
-                →
-              </button>
+              {/* IMPORTANT:
+                  2 columns × 5 rows on desktop
+              */}
+              <section className="user-grid">
 
-            </div>
+                {filteredUsers.map((user) => (
+                  <UserCard
+                    key={user.login.uuid}
+                    user={user}
+                  />
+                ))}
 
-          </>
-        )}
+              </section>
+
+
+              {/* Pagination */}
+              <div className="pagination">
+
+                <button
+                  className="page-button"
+                  onClick={handlePrevious}
+                  disabled={page === 1}
+                >
+                  ←
+                  <span>
+                    Previous
+                  </span>
+                </button>
+
+
+                <div className="page-number">
+
+                  <span>
+                    Page
+                  </span>
+
+                  <strong>
+                    {page}
+                  </strong>
+
+                  <span>
+                    of {totalPages}
+                  </span>
+
+                </div>
+
+
+                <button
+                  className="page-button next"
+                  onClick={handleNext}
+                  disabled={page === totalPages}
+                >
+                  <span>
+                    Next
+                  </span>
+                  →
+                </button>
+
+              </div>
+
+            </>
+          )}
 
       </main>
 
 
+      {/* Footer */}
       <footer className="footer">
 
         <div>
-          <strong>PeopleHub</strong>
-          <span> · Random User Explorer</span>
+          <strong>
+            PeopleHub
+          </strong>
+
+          <span>
+            {' · Random User Explorer'}
+          </span>
         </div>
 
         <span>

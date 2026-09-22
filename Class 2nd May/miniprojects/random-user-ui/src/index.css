@@ -8,13 +8,16 @@
     "Segoe UI",
     sans-serif;
 
-  color: #f5f7fb;
-  background: #08090d;
+  color: #f7f7f7;
+
+  background: #080a0d;
 
   font-synthesis: none;
+
   text-rendering: optimizeLegibility;
 
   -webkit-font-smoothing: antialiased;
+
   -moz-osx-font-smoothing: grayscale;
 }
 
@@ -27,7 +30,9 @@
 html {
   min-width: 320px;
 
-  background: #08090d;
+  min-height: 100%;
+
+  background: #080a0d;
 
   scroll-behavior: smooth;
 }
@@ -37,9 +42,10 @@ body {
   margin: 0;
 
   min-width: 320px;
+
   min-height: 100vh;
 
-  background: #08090d;
+  background: #080a0d;
 }
 
 
@@ -61,32 +67,38 @@ img {
 }
 
 
+a {
+  color: inherit;
+}
+
+
 ::selection {
-  background: rgba(129, 140, 248, 0.35);
+  background:
+    rgba(249, 115, 22, 0.35);
 
   color: white;
 }
 
 
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 9px;
 }
 
 
 ::-webkit-scrollbar-track {
-  background: #08090d;
+  background: #080a0d;
 }
 
 
 ::-webkit-scrollbar-thumb {
-  background: #292d38;
+  background: #292d32;
 
   border-radius: 10px;
 }
 
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3b4050;
+  background: #41464d;
 }
 
 
