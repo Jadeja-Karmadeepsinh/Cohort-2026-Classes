@@ -1,0 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --canvas: #f7f4ed;
+  --paper: #fffdf8;
+
+  --ink: #1c1b18;
+  --muted: #716c64;
+
+  --line: #ded8ce;
+
+  --accent: #d84a2d;
+  --accent-dark: #b9361f;
+
+  --display: 'Space Grotesk', system-ui, sans-serif;
+  --body: 'DM Sans', system-ui, sans-serif;
+
+  font-family: var(--body);
+
+  color: var(--ink);
+  background: var(--canvas);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+
+  background:
+    radial-gradient(
+      circle at 10% 0%,
+      rgba(216, 74, 45, 0.035),
+      transparent 30%
+    ),
+    var(--canvas);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #ece7df;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #b9b1a6;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #8f887e;
+}
+
+#root {
+  min-height: 100vh;
+}
