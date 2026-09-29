@@ -35,33 +35,127 @@ api.interceptors.request.use((config) => {
 
 
 // ======================================================
+// REFRESH PROMISE
+// ======================================================
+//
+// This variable stores the CURRENT refresh request.
+//
+// Why?
+//
+// Suppose 5 requests receive 401 at the same time.
+//
+// We DON'T want:
+//
+// Request 1 → /refresh
+// Request 2 → /refresh
+// Request 3 → /refresh
+// Request 4 → /refresh
+// Request 5 → /refresh
+//
+// Because our backend rotates refresh tokens.
+//
+// Instead:
+//
+// Request 1 → /refresh
+// Request 2 ─────────┐
+// Request 3 ─────────┤
+// Request 4 ─────────┼→ WAIT for the SAME refresh
+// Request 5 ─────────┘
+//
+// ======================================================
+
+let refreshPromise = null;
+
+
+// ======================================================
+// REFRESH ACCESS TOKEN
+// ======================================================
+//
+// This function performs the actual refresh request.
+//
+// IMPORTANT:
+//
+// We use axios.post() instead of api.post()
+//
+// because `api` has the response interceptor.
+// ======================================================
+
+async function refreshAccessToken() {
+    const refreshToken = tokenStore.getRefresh();
+
+    if(!refreshToken) {
+        throw new Error("No refresh token available");
+    }
+
+    console.log("Refreshing access token...");
+
+    const refreshResponse = await axios.post(
+        `${BASE_URL}/auth/refresh`,
+        {
+            refreshToken: refreshToken
+        },
+        {
+            headers: {
+                "Content-Type": "application/json"
+            }
+        }
+    );
+
+    const {
+        accessToken,
+        refreshToken: newRefreshToken
+    } = refreshResponse.data;
+
+    // ==================================================
+    // SAVE NEW TOKENS
+    // ==================================================
+
+    tokenStore.set({
+        accessToken,
+        refreshToken: newRefreshToken
+    });
+
+    console.log("New tokens stored");
+
+    return accessToken;
+}
+
+
+// ======================================================
 // RESPONSE INTERCEPTOR
 // ======================================================
-// If the request succeeds, simply return the response.
 //
-// If backend returns 401, it means our accessToken may
-// have expired.
+// If the request succeeds:
 //
-// Then:
+//       return response
 //
-// 1. Get refreshToken
-// 2. Call /refresh
-// 3. Get new accessToken + refreshToken
-// 4. Store new tokens
-// 5. Retry the ORIGINAL request
+// If backend returns 401:
+//
+//       1. Check whether we already retried
+//       2. Get/create ONE refresh request
+//       3. Wait for refresh
+//       4. Get new access token
+//       5. Retry ORIGINAL request
+//
 // ======================================================
 
 api.interceptors.response.use(
-    // Successful response
+    // ==================================================
+    // SUCCESSFUL RESPONSE
+    // ==================================================
     (response) => {
         return response;
     },
 
-    // Error response
+    // ==================================================
+    // ERROR RESPONSE
+    // ==================================================
     async (error) => {
         const originalRequest = error.config;
 
-        // Only handle 401 errors
+        // ==================================================
+        // ONLY HANDLE 401 ERRORS
+        // ==================================================
         if(error.response?.status !== 401) {
             return Promise.reject(error);
         }
@@ -92,55 +186,50 @@ api.interceptors.response.use(
 
         originalRequest._retry = true;
 
-        // Get refresh token
-        const refreshToken = tokenStore.getRefresh();
-
-        // If there is no refresh token,
-        // user cannot refresh the session.
-        if (!refreshToken) {
-            tokenStore.clear();
-            return Promise.reject(error);
-        }
-
         try {
             // ==================================================
-            // IMPORTANT
+            // CREATE ONE REFRESH REQUEST
             // ==================================================
             //
-            // Don't use `api.post()` here.
+            // If refreshPromise doesn't exist:
             //
-            // `api` has our response interceptor.
+            //     create refresh request
             //
-            // If /refresh itself returns 401,
-            // it could trigger the interceptor again.
+            // If it already exists:
             //
-            // Therefore we use axios.post() directly.
+            //     DON'T create another request
+            //
+            //     just wait for the existing one.
+            //
             // ==================================================
 
-            const refreshResponse = await axios.post(
-                `${BASE_URL}/auth/refresh`,
-                {
-                    refreshToken: refreshToken
-                },
-                {
-                    headers: {
-                        "Content-Type": "application/json"
-                    }
-                }
-            );
+            if(!refreshPromise) {
+                // ==================================================
+                // IMPORTANT
+                // ==================================================
+                //
+                // Once refresh finishes, reset refreshPromise.
+                //
+                // `finally` runs whether refresh succeeds
+                // or fails.
+                //
+                // ==================================================
 
-            const { accessToken, refreshToken: newRefreshToken } = refreshResponse.data;
+                refreshPromise = refreshAccessToken().finally(() => {
+                    refreshPromise = null;
+                });
+            }
 
             // ==================================================
-            // Save the NEW tokens
+            // WAIT FOR REFRESH
             // ==================================================
 
-            tokenStore.set({ accessToken, newRefreshToken });
+            const newAccessToken = await refreshPromise;
 
             // ==================================================
             // Update the ORIGINAL request
             // ==================================================
-            originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 
             // ==================================================
             // RETRY THE ORIGINAL REQUEST
