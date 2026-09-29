@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HookFormRouteImport } from './routes/HookForm'
 import { Route as ManualFormRouteImport } from './routes/ManualForm'
+import { Route as ProfileRouteImport } from './routes/Profile'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const ManualFormRoute = ManualFormRouteImport.update({
   path: '/ManualForm',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/Profile',
+  path: '/Profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/HookForm': typeof HookFormRoute
   '/ManualForm': typeof ManualFormRoute
+  '/Profile': typeof ProfileRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/HookForm': typeof HookFormRoute
   '/ManualForm': typeof ManualFormRoute
+  '/Profile': typeof ProfileRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/HookForm': typeof HookFormRoute
   '/ManualForm': typeof ManualFormRoute
+  '/Profile': typeof ProfileRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/HookForm' | '/ManualForm'
+  fullPaths: '/' | '/HookForm' | '/ManualForm' | '/Profile'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/HookForm' | '/ManualForm'
-  id: '__root__' | '/' | '/HookForm' | '/ManualForm'
+  to: '/' | '/HookForm' | '/ManualForm' | '/Profile'
+  id: '__root__' | '/' | '/HookForm' | '/ManualForm' | '/Profile'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HookFormRoute: typeof HookFormRoute
   ManualFormRoute: typeof ManualFormRoute
+  ProfileRoute: typeof ProfileRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManualFormRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/Profile': {
+      id: '/Profile'
+      path: '/Profile'
+      fullPath: '/Profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HookFormRoute: HookFormRoute,
   ManualFormRoute: ManualFormRoute,
+  ProfileRoute: ProfileRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

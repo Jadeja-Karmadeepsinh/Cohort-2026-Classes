@@ -15,7 +15,8 @@ export const authService = {
     },
 
     async logout() {
-        await api.post('/auth/logout');
+        const refreshToken = tokenStore.getRefresh();
+        await api.post('/auth/logout', { refreshToken });
         tokenStore.clear();
     },
 
