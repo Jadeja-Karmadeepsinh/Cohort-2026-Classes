@@ -13,12 +13,13 @@ const AboutPage = () => {
 
       {/* if we want to use image from other urls with hostname in url we need to configure next.config.ts */}
 
-      <Image 
+      {/* <Image 
         src="https://chaicode.com/assets/white-1-CYshgcRl.webp" 
         width={500}
         height={500}
+        placeholder="blur"
         alt="Picture of the author"
-      />
+      /> */}
     </>
   )
 }
