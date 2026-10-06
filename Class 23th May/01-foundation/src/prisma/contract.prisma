@@ -1,0 +1,9 @@
+// use prisma-8
+
+model Todo {
+  id        String            @id @default(uuid())
+  title     String
+  completed Boolean           @default(false)
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+}
