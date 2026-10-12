@@ -1,0 +1,21 @@
+{
+  "name": "@monorepo-practice/utils",
+  "version": "1.0.0",
+  "description": "",
+  "private": "true",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}
